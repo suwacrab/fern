@@ -38,6 +38,11 @@ namespace fern {
 			return id == HLData;
 		}
 	}
+	namespace JOYPMode {
+		enum {
+			button,direction
+		};
+	}
 
 	class CEmulatorComponent {
 		protected:
@@ -94,6 +99,7 @@ namespace fern {
 	class CMapper : public CEmulatorComponent {
 		private:
 		public:
+			auto error_unimpl(const std::string& msg) -> void;
 			virtual auto name() const -> std::string = 0;
 			virtual auto read_rom(size_t addr) -> uint32_t = 0;
 			virtual auto read_sram(size_t addr) -> uint32_t = 0;
@@ -107,10 +113,10 @@ namespace fern {
 		private:
 		public:
 			auto name() const -> std::string { return "none"; };
-			auto read_rom(size_t addr) -> uint32_t { return 0; };
-			auto read_sram(size_t addr) -> uint32_t { return 0; };
-			auto write_sram(size_t addr, int data) -> void {}
-			auto write_rom(size_t addr, int data) -> void {}
+			auto read_rom(size_t addr) -> uint32_t;
+			auto read_sram(size_t addr) -> uint32_t;
+			auto write_sram(size_t addr, int data) -> void;
+			auto write_rom(size_t addr, int data) -> void;
 			CMapperNone() {}
 			~CMapperNone() {}
 
@@ -147,10 +153,10 @@ namespace fern {
 		std::array<uint8_t,16 * 1024> data;
 	};
 	struct CMemIO {
+		bool m_joypmode;
+		
 		int m_IF;
 		int m_IE;
-		// 00h
-		int m_JOYP;
 
 		// 10h
 		int m_NR10,m_NR11,m_NR12,m_NR13,m_NR14;
@@ -162,6 +168,8 @@ namespace fern {
 		int m_NR51;
 		int m_NR52;
 
+		int m_waveram[0x10];
+
 		// 40h
 		int m_LCDC;
 		int m_STAT;
@@ -172,6 +180,8 @@ namespace fern {
 		int m_LYC;
 		int m_BGP;
 		int m_OBP[2];
+		int m_WY;
+		int m_WX;
 
 		int m_SVBK;
 

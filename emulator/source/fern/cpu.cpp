@@ -13,6 +13,17 @@ namespace fernOpcodes {
 		cpu->clock_tick(2);
 	}
 
+	fern_opcodefn(xor_a_imm8) {
+		cpu->m_regA ^= cpu->read_pc(1);
+		cpu->flag_setZero(cpu->m_regA == 0);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
+		cpu->flag_setCarry(false);
+
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+
 	fern_opcodepfxfn(andxor) {
 		auto uses_hl = fern::RegisterName::is_hldata(register_id);
 		uint8_t cur_hldat = 0;
@@ -918,17 +929,25 @@ namespace fernOpcodes {
 
 		// operation fetching
 		switch(oper_id) {
-			case 0x4:
-			case 0x5:
-			case 0x6:
-			case 0x7: { // BIT
-				int bit_idx = (prefix_operand - 0x40) >> 3;
-				bool flag = (cur_reg() >> bit_idx)&1;
-				cpu->flag_setZero(!flag);
+			case 0x02: { // SLA/SRA
+				int result = 0;
+				bool carry = false;
+				if(oper_mode == 0) {
+					result = cur_reg() << 1;
+					carry = cur_reg() >> 7;
+				} else {
+					result = (cur_reg()>>7) | (cur_reg()&0x80);
+					carry = cur_reg()&1;
+				}
+				
+				cpu->flag_setZero(result == 0);
 				cpu->flag_setSubtract(false);
-				cpu->flag_setHalfcarry(true);
+				cpu->flag_setHalfcarry(false);
+				cpu->flag_setCarry(carry);
+				reg_write(result);
 
-				clock_ticks = uses_hl ? 3 : 2;
+				clock_ticks = uses_hl ? 4 : 2;
+				writeback_hldat = uses_hl;
 				break;
 			}
 			case 0x3: { // SWAP/SRL
@@ -949,6 +968,46 @@ namespace fernOpcodes {
 				}
 				break;
 			}
+			// BIT --------------------------------------@/
+			case 0x4:
+			case 0x5:
+			case 0x6:
+			case 0x7: {
+				int bit_idx = (prefix_operand - 0x40) >> 3;
+				bool flag = (cur_reg() >> bit_idx)&1;
+				cpu->flag_setZero(!flag);
+				cpu->flag_setSubtract(false);
+				cpu->flag_setHalfcarry(true);
+
+				clock_ticks = uses_hl ? 3 : 2;
+				break;
+			}
+			// RES --------------------------------------@/
+			case 0x8:
+			case 0x9:
+			case 0xA:
+			case 0xB: {
+				int bit_idx = (prefix_operand - 0x80) >> 3;
+				reg_write(cur_reg() & (0xFF ^ (1<<bit_idx)));
+
+				writeback_hldat = uses_hl;
+				clock_ticks = uses_hl ? 4 : 2;
+				break;
+			}
+
+			// SET --------------------------------------@/
+			case 0xC:
+			case 0xD:
+			case 0xE:
+			case 0xF: {
+				int bit_idx = (prefix_operand - 0xC0) >> 3;
+				reg_write(cur_reg() | (1<<bit_idx));
+
+				writeback_hldat = uses_hl;
+				clock_ticks = uses_hl ? 4 : 2;
+				break;
+			}
+
 			default: {
 				std::printf("unimplemented prefix op (%02Xh)\n",prefix_operand);
 				cpu->print_status();
@@ -993,9 +1052,9 @@ namespace fernOpcodes {
 		cpu->clock_tick(1);
 	}
 	fern_opcodefn(cpl) {
-		cpu->m_regA ^= 0xFF;
-		cpu->flag_setSubtract(false);
-		cpu->flag_setHalfcarry(false);
+		cpu->m_regA = ~cpu->m_regA;
+		cpu->flag_setSubtract(true);
+		cpu->flag_setHalfcarry(true);
 		cpu->pc_increment(1);
 		cpu->clock_tick(1);
 	}
@@ -1044,6 +1103,7 @@ namespace fern {
 		opcode_set(0xE6,CCPUInstr(INSTRFN_NAME(and_a_imm8),"and a,imm8"));
 		opcode_setPrefix(0xA,CCPUInstrPfx(INSTRFN_NAME(andxor),"and a,xx/xor a,xx"));
 		opcode_setPrefix(0xB,CCPUInstrPfx(INSTRFN_NAME(orcp),"or a,xx/cp a,xx"));
+		opcode_set(0xEE,CCPUInstr(INSTRFN_NAME(xor_a_imm8),"xor a,imm8"));
 		
 		// ldh
 		opcode_set(0xE0,CCPUInstr(INSTRFN_NAME(ldh_a8_a),"ldh [a8],a"));
@@ -1259,20 +1319,20 @@ namespace fern {
 	auto CCPU::flag_syncCompare(int opA,int opB) -> void {
 		auto result = (opA - opB);
 		auto res_4b = (opA & 0xF) - (opB & 0xF);
-		flag_setZero(result == 0);
+		flag_setZero((result & 0xFF) == 0);
 		flag_setSubtract(true);
 		flag_setHalfcarry((res_4b & 0x10) == 0x10);
 		flag_setCarry(opB > opA);
 	}
 	auto CCPU::flag_syncCompareInc(int operand) -> void {
-		auto result = operand + 1;
+		auto result = (operand + 1) & 0xFF;
 		auto res_4b = (operand & 0xF) + (1 & 0xF);
 		flag_setZero(result == 0);
 		flag_setSubtract(false);
 		flag_setHalfcarry((res_4b & 0x10) == 0x10);
 	}
 	auto CCPU::flag_syncCompareDec(int operand) -> void {
-		auto result = operand - 1;
+		auto result = (operand - 1) & 0xFF;
 		auto res_4b = (operand & 0xF) - (1 & 0xF);
 		flag_setZero(result == 0);
 		flag_setSubtract(true);
@@ -1452,7 +1512,7 @@ namespace fern {
 
 				if(did_vblStart) {
 					mem.m_io.m_IF |= 0x01;
-					SDL_Delay(16);
+					//SDL_Delay(16);
 				}
 
 				// deal with interrupts, if enabled. ----@/

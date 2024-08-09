@@ -18,6 +18,8 @@ namespace fern {
 		delete m_mapper;
 		m_mapper = nullptr;
 		m_io = {};
+		m_io.m_LCDC = 0x91;
+		m_io.m_IF = 0x01;
 	}
 
 	auto CMem::mapper_setupNone() -> void {
@@ -56,8 +58,16 @@ namespace fern {
 		if((addr>>15) == 0) {
 			return m_mapper->read_rom(addr);
 		} else {
+			// $8000-$9FFF : VRAM
+			if(addr_hi >= 0x80 && addr_hi <= 0x9F) {
+				return m_vram.at(addr & 0x1FFF);
+			}
+			// $A000-$BFFF : SRAM
+			else if(addr_hi >= 0xA0 && addr_hi <= 0xBF) {
+				return m_mapper->read_sram(addr & 0x1FFF);
+			} 
 			// $C000-$CFFF : WRAM bank0
-			if(addr_hi >= 0xC0 && addr_hi <= 0xCF) {
+			else if(addr_hi >= 0xC0 && addr_hi <= 0xCF) {
 				return m_wram.at(addr & 0x0FFF);
 			}
 			// $D000-$DFFF : WRAM bank1-7
@@ -85,11 +95,30 @@ namespace fern {
 			switch(addr) {
 				// joypad -------------------------------@/
 				case 0x00: {
-					return m_io.m_JOYP;
+					int paddata = 0xCF;
+					if(m_io.m_joypmode == fern::JOYPMode::button) {
+						if(emu()->button_held(EmuButton::a)) paddata ^= 0x1;
+						if(emu()->button_held(EmuButton::b)) paddata ^= 0x2;
+						if(emu()->button_held(EmuButton::select)) paddata ^= 0x4;
+						if(emu()->button_held(EmuButton::start)) paddata ^= 0x8;
+					} else {
+						if(emu()->button_held(EmuButton::right)) paddata ^= 0x1;
+						if(emu()->button_held(EmuButton::left)) paddata ^= 0x2;
+						if(emu()->button_held(EmuButton::up)) paddata ^= 0x4;
+						if(emu()->button_held(EmuButton::down)) paddata ^= 0x8;
+					}
+					std::printf("pad: %1Xh (mode: %d)\n",paddata,m_io.m_joypmode);
+					return paddata;
 				}
+				// sound --------------------------------@/
+				case 0x14: return m_io.m_NR14 & (1<<6);
+				case 0x19: return m_io.m_NR24 & (1<<6);
+				case 0x1E: return m_io.m_NR34 & (1<<6);
+				case 0x23: return m_io.m_NR44 & (1<<6);
 				// video --------------------------------@/
 				case 0x41: return m_io.m_STAT;
 				case 0x44: return m_io.m_LY;
+				case 0x47: return m_io.m_BGP;
 				// unknown ------------------------------@/
 				default: {
 					std::printf("unimplemented: IO read (%02Xh)\n",addr);
@@ -123,12 +152,16 @@ namespace fern {
 			else if(addr_hi >= 0xC0 && addr_hi <= 0xDF) {
 				m_wram[addr & 0x1FFF] = data;
 			}
+			// echo RAM
+			else if(addr_hi >= 0xE0 && addr_hi <= 0xFD) {
+				m_wram[addr & 0x1FFF] = data;
+			}
 			// OAM
 			else if(addr_hi == 0xFE) {
 				if(addr_lo < 0xA0) {
 					if(!oam_accessible()) {
-						std::puts("attempt to write to OAM while inaccessible");
-						emu()->cpu.print_status();
+						//std::puts("attempt to write to OAM while inaccessible");
+						//emu()->cpu.print_status();
 					} else {
 						m_oam[addr_lo] = data;
 					}
@@ -174,33 +207,20 @@ namespace fern {
 				// joypad -------------------------------@/
 				case 0x00: { // JOYP
 					int seldata = data & 0x30;
-					int paddata = 0xCF | seldata;
 					if(seldata == 0x30) {
 						//std::printf("warning: double-write to joyp\n");
 						//emu()->cpu.print_status();
-						//m_io.m_JOYP = 0xFF;
 						break;
 					}
 					
 					// directionals
 					if(data & 0x10) {
-						if(emu()->button_held(EmuButton::right)) paddata ^= 0x1;
-						if(emu()->button_held(EmuButton::left)) paddata ^= 0x2;
-						if(emu()->button_held(EmuButton::up)) paddata ^= 0x4;
-						if(emu()->button_held(EmuButton::down)) paddata ^= 0x8;
+						m_io.m_joypmode = fern::JOYPMode::direction;
 					} 
 					// buttons
 					else if(data & 0x20) {
-						if(emu()->button_held(EmuButton::a)) paddata ^= 0x1;
-						if(emu()->button_held(EmuButton::b)) paddata ^= 0x2;
-						if(emu()->button_held(EmuButton::select)) paddata ^= 0x4;
-						if(emu()->button_held(EmuButton::start)) paddata ^= 0x8;
+						m_io.m_joypmode = fern::JOYPMode::button;
 					}
-
-					if((paddata ^ 0xFF) & 0x8) {
-						std::printf("btn 3 set");
-					}
-					m_io.m_JOYP = paddata;
 					break;
 				}
 				case 0x0F: { // IF
@@ -300,6 +320,16 @@ namespace fern {
 					m_io.m_NR52 |= (data & 0x80);
 					break;
 				}
+
+				case 0x30: case 0x31: case 0x32: case 0x33:
+				case 0x34: case 0x35: case 0x36: case 0x37:
+				case 0x38: case 0x39: case 0x3A: case 0x3B:
+				case 0x3C: case 0x3D: case 0x3E:
+				case 0x3f: { // wave RAM
+					int wave_idx = addr & 0xF;
+					m_io.m_waveram[wave_idx] = data & 0xF;
+					break;
+				}
 				// video --------------------------------@/
 				case 0x40: { // LCDC
 					if(!m_io.ppu_enabled() && (data & 0x80)) {
@@ -348,6 +378,14 @@ namespace fern {
 				}
 				case 0x49: { // OBP1
 					m_io.m_OBP[1] = data;
+					break;
+				}
+				case 0x4A: { // WY
+					m_io.m_WY = data;
+					break;
+				}
+				case 0x4B: { // WX
+					m_io.m_WX = data;
 					break;
 				}
 				
@@ -436,6 +474,30 @@ namespace fern {
 		}
 	}
 
+	// general mapper -----------------------------------@/
+	auto CMapper::error_unimpl(const std::string& message) -> void {
+		std::printf("mapper '%s': error: unimplemented (%s)\n",
+			message.c_str()
+		);
+		std::exit(-1);
+	}
+
+	// none mapper --------------------------------------@/
+	auto CMapperNone::read_rom(size_t addr) -> uint32_t {
+		return m_emu->mem.m_rombanks[0].data[addr & 0x7FFF];
+	};
+
+	auto CMapperNone::read_sram(size_t addr) -> uint32_t {
+		//error_unimpl("true SRAM read");
+		return 0xFF;
+	}
+	auto CMapperNone::write_sram(size_t addr, int data) -> void {
+		//error_unimpl("true SRAM write");
+	}
+	auto CMapperNone::write_rom(size_t addr, int data) -> void {
+	}
+
+
 	// MBC1 ---------------------------------------------@/
 	CMapperMBC1::CMapperMBC1(bool use_ram, bool use_battery) {
 		m_banknum = 1;
@@ -459,9 +521,8 @@ namespace fern {
 		if(!m_useram) { return 0; }
 		if(!m_usebattery) { return 0; }
 		addr &= 0x1FFF;
-
-		std::printf("unimplemented (true SRAM read)\n");
-		std::exit(-1);
+		error_unimpl("true SRAM read");
+		return 0;
 	}
 	
 	auto CMapperMBC1::write_sram(size_t addr, int data) -> void {
@@ -469,8 +530,7 @@ namespace fern {
 		if(!m_usebattery) { return; }
 		addr &= 0x1FFF;
 
-		std::printf("unimplemented (true SRAM write)\n");
-		std::exit(-1);
+		error_unimpl("true SRAM write");
 	}
 	auto CMapperMBC1::write_rom(size_t addr, int data) -> void {
 		addr &= 0x7FFF;

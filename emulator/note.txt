@@ -8,7 +8,8 @@ for access
 01f4: .copyDMAroutine
 021f: .copyDMAroutine's end
 0226: .jmp_226 (aka. main loop(?))
-025a: .decrementTimers
+	025a: .decrementTimers
+	0264: .skip
 
 21b1: LoadNextColumn?
 	21e8: .decodeLoop
@@ -42,3 +43,6 @@ error til now was due to jr not incrementing pc. should be fine?
 todo: ei
 
 042c: fine.
+
+kensa:
+	5705: wram clear end

@@ -28,15 +28,23 @@ namespace fern {
 			}
 		}
 		SDL_RenderPresent(m_renderer);
+		std::puts("frame");
 	}
 	auto CRenderer::draw_line(int draw_y) -> void {
 		if(draw_y < 0 || draw_y >= 144) return;
-		const fern::CColor palet_gray[4] = {
+		/*const fern::CColor palet_gray[4] = {
 			fern::CColor(255,255,255),
 			fern::CColor(192,192,192),
 			fern::CColor(112,112,112),
 			fern::CColor(12,12,12)
+		};*/
+		const fern::CColor palet_gray[4] = {
+			fern::CColor(0xff,0xf6,0xd3),
+			fern::CColor(0xf9,0xa8,0x75),
+			fern::CColor(0xeb,0x6b,0x6f),
+			fern::CColor(0x7c,0x3f,0x58)
 		};
+
 		int bgp_table[4] = {};
 		auto& mem = emu()->mem;
 		const int bgp = mem.m_io.m_BGP;
@@ -66,7 +74,8 @@ namespace fern {
 			int dotA = (lineA >> (7-(fetch_x&7))) & 1;
 			int dotB = (lineB >> (7-(fetch_x&7))) & 1;
 			int dot = dotA | (dotB<<1);
-			m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
+		//	m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
+			m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
 		}
 	}
 

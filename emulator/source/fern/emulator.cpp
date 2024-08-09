@@ -1,5 +1,6 @@
 #include <fern.h>
 #include <vector>
+#include <iostream>
 #include <SDL2/SDL.h>
 
 namespace fern {
@@ -58,7 +59,7 @@ namespace fern {
 	auto CEmulator::button_held(int btn) -> bool {
 		if(btn < 0) return false;
 		if(btn >= EmuButton::num_keys) return false;
-		return m_joypad_state[btn];
+		return m_joypad_state.at(btn);
 	}
 
 	auto CEmulator::boot() -> void {
@@ -76,41 +77,47 @@ namespace fern {
 			}
 			// debug process
 			if(m_debugEnable) {
-				char cmdname = 0;
-				std::printf("enter command (r=run,w=where, s=step, g=run til addr, q=quit): ");
-				std::scanf(" %c",&cmdname);
-				switch(cmdname) {
-					case 'q': {
-						quit();
-						break;
-					}
-					case 'w': {
-						cpu.print_status();
-						break;
-					}
-					case 'r': {
-						m_debugEnable = false;
-						break;
-					}
-					case 's': {
-						cpu.step();
-						cpu.print_status();
-						break;
-					}
-					case 'g': {
-						int to_addr = 0;
-						std::printf("where to? (hex): ");
-						std::scanf("%x",&to_addr);
-						m_debugSkipAddr = to_addr;
-						m_debugSkipping = true;
-						debug_set(false);
-						break;
-					}
-					default: {
-						std::printf("unknown command %d\n",cmdname);
-						std::exit(-1);
-					}
-				}	
+				std::string cmdname;
+				std::printf("enter command (r=run,w=where,s=step,g=run til,p=peek,q=quit): ");
+				std::cin >> cmdname;
+				if(cmdname == "p") {
+					int peek_addr = 0;
+					std::printf("where to? (hex): ");
+					std::scanf("%x",&peek_addr);
+					std::printf("read $%04X: $%04X\n",peek_addr,mem.read(peek_addr));
+				}
+				else if(cmdname == "q") {
+					quit();
+				}
+				else if(cmdname == "w") {
+					cpu.print_status();
+				}
+				else if(cmdname == "r") {
+					m_debugEnable = false;
+				}
+				else if(cmdname == "s") {
+					cpu.step();
+					cpu.print_status();
+				}
+				else if(cmdname == "ss") {
+					int to_step = 0;
+					std::printf("how many lines? (int): ");
+					std::scanf("%d",&to_step);
+					for(int i=0; i<to_step; i++) cpu.step();
+
+					cpu.print_status();
+				}
+				else if(cmdname == "g") {
+					int to_addr = 0;
+					std::printf("where to? (hex): ");
+					std::scanf("%x",&to_addr);
+					m_debugSkipAddr = to_addr;
+					m_debugSkipping = true;
+					debug_set(false);
+				}
+				else {
+					std::printf("unknown command %s\n",cmdname.c_str());
+				}
 			} 
 			// regular process
 			else {
