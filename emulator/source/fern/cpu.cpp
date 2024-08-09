@@ -1205,6 +1205,9 @@ namespace fern {
 		m_SP = 0xFFFE;
 
 		m_dotclock = 0;
+		m_clockWaiting = false;
+		m_clockWaitBuffer = std::stack<int>();
+		m_lycCooldown = false;
 		m_curopcode_ptr = nullptr;
 	}
 
@@ -1322,7 +1325,7 @@ namespace fern {
 	auto CCPU::calreturn(bool enable_intr) -> void {
 		if(enable_intr) {
 			m_PC = stack_pop16();
-			m_regIME = true;
+			m_should_enableIME = true;
 		} else {
 			m_PC = stack_pop16();
 		}
@@ -1364,123 +1367,150 @@ namespace fern {
 		}
 	}
 
-	auto CCPU::clock_tick(int cyclecnt) -> void {
-		auto &mem = emu()->mem;
-		// 4 dots per cycle
-		if(mem.m_io.ppu_enabled()) {
-			m_dotclock += (cyclecnt*4);
-		}
+	auto CCPU::clock_tick(const int cyclecnt) -> void {
+		// if not already waiting, wait, and buffer additional clock ticks
+		if(!m_clockWaiting) {
+			m_clockWaiting = true;
+			m_clockWaitBuffer.push(cyclecnt);
+			
+			while(!m_clockWaitBuffer.empty()) {
+				const auto wait_cycles = m_clockWaitBuffer.top();
+				m_clockWaitBuffer.pop();
 
-		// set current mode
-		// mode 2: OAM scan (0-79?) (no OAM)
-		// mode 3: OAM draw (no OAM/VRAM)
-		// mode 0: hblank (all accessible)
-		bool frame_ended = false;
-		bool do_drawline = false;
-		auto old_scanline = mem.m_io.m_LY;
-		int old_mode = mem.m_io.stat_getMode();
-
-		if(m_dotclock >= 456) {
-			mem.m_io.m_LY += 1;
-			if(mem.m_io.m_LY > 153) {
-				mem.m_io.m_LY = 0;
-				frame_ended = true;
-			}
-
-			do_drawline = true;
-			m_dotclock -= 456;
-		} else {
-			if(m_dotclock < 80) {
-				mem.m_io.stat_setMode(2);
-			} else if(m_dotclock >= 80 && m_dotclock < (80+172)) {
-				mem.m_io.stat_setMode(3);
-			} else {
-				mem.m_io.stat_setMode(0);
-			}
-		}
-
-		// additional mode checking
-		if(mem.m_io.m_LY >= 144) {
-			mem.m_io.stat_setMode(1);
-		}
-
-		if(!mem.m_io.ppu_enabled()) {
-			mem.m_io.m_LY = 0;
-			m_dotclock = 0;
-		}
-
-		mem.stat_lycSync();
-
-		if(mem.m_io.ppu_enabled()) {
-			const int cur_mode = mem.m_io.stat_getMode();
-			if(cur_mode != old_mode) {
-				bool do_setflag = false;
-				if((cur_mode == 0) && (mem.m_io.m_STAT&0x08)) {
-					do_setflag = true;
-				}
-				if((cur_mode == 1) && (mem.m_io.m_STAT&0x10)) {
-					do_setflag = true;
-				}
-				if((cur_mode == 2) && (mem.m_io.m_STAT&0x20)) {
-					do_setflag = true;
+				auto &mem = emu()->mem;
+				// 4 dots per cycle
+				if(mem.m_io.ppu_enabled()) {
+					m_dotclock += (wait_cycles*4);
 				}
 
-				if(cur_mode == 1) {
+				// set current mode
+				// mode 2: OAM scan (0-79?) (no OAM)
+				// mode 3: OAM draw (no OAM/VRAM)
+				// mode 1: vblank (all accessible)
+				// mode 0: hblank (all accessible)
+				bool frame_ended = false;
+				bool do_drawline = false;
+				auto old_scanline = mem.m_io.m_LY;
+				int old_mode = mem.m_io.stat_getMode();
+				bool did_vblStart = false;
+
+				if(m_dotclock >= 456) {
+					mem.m_io.m_LY += 1;
+					if(mem.m_io.m_LY > 153) {
+						mem.m_io.m_LY = 0;
+						frame_ended = true;
+					}
+					did_vblStart = (mem.m_io.m_LY == 144);
+
+					do_drawline = true;
+					m_dotclock -= 456;
+					m_lycCooldown = true;
+				} else {
+					if(m_dotclock < 80) {
+						mem.m_io.stat_setMode(2);
+					} else if(m_dotclock >= 80 && m_dotclock < (80+172)) {
+						mem.m_io.stat_setMode(3);
+					} else {
+						mem.m_io.stat_setMode(0);
+					}
+				}
+
+				// additional mode checking
+				if(mem.m_io.m_LY >= 144) {
+					mem.m_io.stat_setMode(1);
+				}
+
+				if(!mem.m_io.ppu_enabled()) {
+					mem.m_io.m_LY = 0;
+					m_dotclock = 0;
+				}
+
+				mem.stat_lycSync();
+
+				// set flags based on mode changes ------@/
+				if(mem.m_io.ppu_enabled()) {
+					const int cur_mode = mem.m_io.stat_getMode();
+					if(cur_mode != old_mode) {
+						bool do_setflag = false;
+						if((cur_mode == 0) && (mem.m_io.m_STAT&0x08)) {
+							do_setflag = true;
+						}
+						if((cur_mode == 1) && (mem.m_io.m_STAT&0x10)) {
+							do_setflag = true;
+						}
+						if((cur_mode == 2) && (mem.m_io.m_STAT&0x20)) {
+							do_setflag = true;
+						}
+						mem.m_io.m_IF |= do_setflag ? 0x2 : 0;
+					}
+				}
+
+				if((mem.m_io.m_STAT & 0x40) && mem.m_io.stat_lycSame() && m_lycCooldown) {
+					mem.m_io.m_IF |= 0x2;
+					m_lycCooldown = false;
+				}
+
+				if(did_vblStart) {
 					mem.m_io.m_IF |= 0x01;
+					SDL_Delay(16);
 				}
-				mem.m_io.m_IF |= do_setflag ? 0x2 : 0;
-			}
-			if((mem.m_io.m_STAT & 0x40) && mem.m_io.stat_lycSame()) {
-				mem.m_io.m_IF |= 0x2;
-			}
-		}
 
-		// deal with interrupts, if enabled. ------------@/
-		if(m_regIME) {
-			if((mem.m_io.m_IF & mem.m_io.m_IE) != 0) {
-				m_haltwaiting = false;	
+				// deal with interrupts, if enabled. ----@/
+				if(m_regIME) {
+					if((mem.m_io.m_IF & mem.m_io.m_IE) != 0) {
+						m_haltwaiting = false;	
+					}
+
+					// vblank interrupt
+					if(mem.interrupt_match(0x1)) {
+						mem.interrupt_clear(0x1);
+						m_regIME = false;
+						stack_push16(m_PC);
+						m_PC = 0x40;
+						clock_tick(5);
+					}
+					// LCD interrupt
+					else if(mem.interrupt_match(0x2)) {
+						mem.interrupt_clear(0x2);
+						m_regIME = false;
+						stack_push16(m_PC);
+						m_PC = 0x48;
+						clock_tick(5);
+					}
+					// timer interrupt
+					else if(mem.interrupt_match(0x04)) {
+						std::puts("unimplemented interrupt");
+						std::exit(-1);
+					}
+					// serial interrupt
+					else if(mem.interrupt_match(0x08)) {
+						std::puts("unimplemented interrupt");
+						std::exit(-1);
+					}
+					// joypad interrupt
+					else if(mem.interrupt_match(0x10)) {
+						std::puts("unimplemented interrupt");
+						std::exit(-1);
+					}
+				}
+
+				if(do_drawline) {
+					if(!mem.m_io.ppu_enabled()) {
+						std::puts("fuck off");
+						std::exit(-1);
+					}
+					emu()->renderer.draw_line(old_scanline);
+				}
+				if(frame_ended) {
+					emu()->renderer.present();
+				}
 			}
 
-			// LCD interrupt
-			if(mem.interrupt_match(0x1)) {
-				mem.interrupt_clear(0x1);
-				m_regIME = false;
-				stack_push16(m_PC);
-				m_PC = 0x40;
-			}
-			// vblank interrupt
-			else if(mem.interrupt_match(0x2)) {
-				mem.interrupt_clear(0x2);
-				m_regIME = false;
-				stack_push16(m_PC);
-				m_PC = 0x48;
-			}
-			// timer interrupt
-			else if(mem.interrupt_match(0x04)) {
-				std::puts("unimplemented interrupt");
-				std::exit(-1);
-			}
-			// serial interrupt
-			else if(mem.interrupt_match(0x08)) {
-				std::puts("unimplemented interrupt");
-				std::exit(-1);
-			}
-			// joypad interrupt
-			else if(mem.interrupt_match(0x10)) {
-				std::puts("unimplemented interrupt");
-				std::exit(-1);
-			}
+			m_clockWaiting = false;
 		}
-
-		if(do_drawline) {
-			if(!mem.m_io.ppu_enabled()) {
-				std::puts("fuck off");
-				std::exit(-1);
-			}
-			emu()->renderer.draw_line(old_scanline);
-		}
-		if(frame_ended) {
-			emu()->renderer.present();
+		// otherwise, wait til current fn's done	
+		else {
+			m_clockWaitBuffer.push(cyclecnt);
 		}
 	}
 }

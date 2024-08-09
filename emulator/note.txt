@@ -40,3 +40,5 @@ error til now was due to jr not incrementing pc. should be fine?
 
 042c: first EI.
 todo: ei
+
+042c: fine.

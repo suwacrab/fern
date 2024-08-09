@@ -176,9 +176,9 @@ namespace fern {
 					int seldata = data & 0x30;
 					int paddata = 0xCF | seldata;
 					if(seldata == 0x30) {
-						std::printf("warning: double-write to joyp\n");
-						emu()->cpu.print_status();
-						m_io.m_JOYP = 0xFF;
+						//std::printf("warning: double-write to joyp\n");
+						//emu()->cpu.print_status();
+						//m_io.m_JOYP = 0xFF;
 						break;
 					}
 					
@@ -304,6 +304,7 @@ namespace fern {
 				case 0x40: { // LCDC
 					if(!m_io.ppu_enabled() && (data & 0x80)) {
 						emu()->cpu.m_dotclock = 0;
+						emu()->cpu.m_lycCooldown = true;
 						emu()->renderer.present();
 					}
 					m_io.m_LCDC = data;

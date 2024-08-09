@@ -3,9 +3,11 @@
 
 #include <array>
 #include <cstdint>
-#include <vector>
 
+#include <vector>
+#include <stack>
 #include <string>
+
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 
@@ -279,7 +281,10 @@ namespace fern {
 			uint8_t m_curopcode;
 			CCPUInstrBase* m_curopcode_ptr;
 
+			bool m_lycCooldown;
 			int m_dotclock;
+			bool m_clockWaiting;
+			std::stack<int> m_clockWaitBuffer;
 
 			CCPU();
 
