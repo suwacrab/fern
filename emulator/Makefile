@@ -33,5 +33,5 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(OBJS) $(OUTPUT)
+	rm -rf $(OBJS) $(DEPS) $(OUTPUT)
 
