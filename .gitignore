@@ -1,2 +1,2 @@
 emulator/workdata/marioland*.gb
-emulator/build/*.d
+emulator/build/**.d
