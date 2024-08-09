@@ -1,0 +1,41 @@
+when accessing memory (either writing, or reading), the mapper is used for the
+following sections:
+	WRAM (banks 1-7)
+	ROM banks
+for access
+
+01e9: .clearHRAMloop
+01f4: .copyDMAroutine
+021f: .copyDMAroutine's end
+0226: .jmp_226 (aka. main loop(?))
+025a: .decrementTimers
+
+21b1: LoadNextColumn?
+	21e8: .decodeLoop
+	21ff: .nextRow
+	2230: .endOfColumn
+	220e: .notPipe
+	2220: .notHiddenBlock
+	2225: .incrementRow
+2321: CheckBlockForItem
+0842: .drawLoop (push bc)
+
+if up to this point, it runs fine
+01e4: fine.
+01ed: fine. (bcd bits off)
+01fa: fine.
+021c: fine.
+6A69: fine.
+0226: fine.
+025a: fine.
+0033: fine.
+0842: ok?
+LoadNextColumn.clearLoop (21bc): fine.
+	.startNewScreen: fine.
+	.decadeLoop: accurate.
+	.skip: good.
+	.notHiddenBlock: good
+	.nextRow: good
+error til now was due to jr not incrementing pc. should be fine?
+
+042c: first EI.
