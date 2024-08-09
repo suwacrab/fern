@@ -10,27 +10,6 @@ namespace fern {
 		
 	}
 
-	auto CRenderer::process_message() -> void {
-		SDL_Event eve;
-		while(SDL_PollEvent(&eve)) {
-			switch(eve.type) {
-				case SDL_QUIT: {
-					emu()->quit();
-					break;
-				}
-				case SDL_KEYDOWN: {
-					auto key = eve.key.keysym.sym;
-					if(key == SDLK_g) {
-						emu()->debug_set(true);
-					} else if(key == SDLK_r) {
-						emu()->debug_set(false);
-					}
-					break;
-				}
-			}
-		}
-	}
-
 	auto CRenderer::window_create() -> void {
 		SDL_CreateWindowAndRenderer(
 			160,144,0,

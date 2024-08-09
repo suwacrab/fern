@@ -85,7 +85,7 @@ namespace fern {
 			switch(addr) {
 				// joypad -------------------------------@/
 				case 0x00: {
-					return 0x3F; // no buttons pressed
+					return m_io.m_JOYP;
 				}
 				// video --------------------------------@/
 				case 0x41: return m_io.m_STAT;
@@ -173,7 +173,34 @@ namespace fern {
 			switch(addr) {
 				// joypad -------------------------------@/
 				case 0x00: { // JOYP
-					std::printf("warning: write to JOYP register (%02Xh)\n",data);
+					int seldata = data & 0x30;
+					int paddata = 0xCF | seldata;
+					if(seldata == 0x30) {
+						std::printf("warning: double-write to joyp\n");
+						emu()->cpu.print_status();
+						m_io.m_JOYP = 0xFF;
+						break;
+					}
+					
+					// directionals
+					if(data & 0x10) {
+						if(emu()->button_held(EmuButton::right)) paddata ^= 0x1;
+						if(emu()->button_held(EmuButton::left)) paddata ^= 0x2;
+						if(emu()->button_held(EmuButton::up)) paddata ^= 0x4;
+						if(emu()->button_held(EmuButton::down)) paddata ^= 0x8;
+					} 
+					// buttons
+					else if(data & 0x20) {
+						if(emu()->button_held(EmuButton::a)) paddata ^= 0x1;
+						if(emu()->button_held(EmuButton::b)) paddata ^= 0x2;
+						if(emu()->button_held(EmuButton::select)) paddata ^= 0x4;
+						if(emu()->button_held(EmuButton::start)) paddata ^= 0x8;
+					}
+
+					if((paddata ^ 0xFF) & 0x8) {
+						std::printf("btn 3 set");
+					}
+					m_io.m_JOYP = paddata;
 					break;
 				}
 				case 0x0F: { // IF
@@ -297,6 +324,17 @@ namespace fern {
 				}
 				case 0x45: { // LYC
 					m_io.m_LYC = data;
+					break;
+				}
+				case 0x46: { // OAM DMA
+					// source addr: $XX00
+					// output addr: $FE00
+					// length: $A0
+					int src_addr = (data<<8);
+					int out_addr = 0xFE00;
+					for(int i=0; i<0xA0; i++) {
+						write(out_addr + i,read(src_addr + i));
+					}
 					break;
 				}
 				case 0x47: { // BGP

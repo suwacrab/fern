@@ -6,7 +6,11 @@ namespace fern {
 	CEmulator::CEmulator() {
 		m_quitflag = false;
 		m_cgbmode = false;
+
 		m_debugEnable = true;
+		m_debugSkipping = false;
+		m_debugSkipAddr = 0;
+
 		cpu.assign_emu(this);
 		mem.assign_emu(this);
 		renderer.assign_emu(this);
@@ -19,6 +23,44 @@ namespace fern {
 		renderer.window_create();
 	}
 
+
+	auto CEmulator::process_message() -> void {
+		SDL_Event eve;
+		while(SDL_PollEvent(&eve)) {
+			switch(eve.type) {
+				case SDL_QUIT: {
+					quit();
+					break;
+				}
+				case SDL_KEYDOWN: {
+					auto key = eve.key.keysym.sym;
+					if(key == SDLK_g) {
+						debug_set(true);
+					} else if(key == SDLK_r) {
+						debug_set(false);
+					}
+					break;
+				}
+			}
+		}
+		
+		// get keyboard state
+		const auto keystate = SDL_GetKeyboardState(NULL);
+		m_joypad_state.at(EmuButton::up) = keystate[SDL_SCANCODE_UP];
+		m_joypad_state.at(EmuButton::down) = keystate[SDL_SCANCODE_DOWN];
+		m_joypad_state.at(EmuButton::left) = keystate[SDL_SCANCODE_LEFT];
+		m_joypad_state.at(EmuButton::right) = keystate[SDL_SCANCODE_RIGHT];
+		m_joypad_state.at(EmuButton::a) = keystate[SDL_SCANCODE_A];
+		m_joypad_state.at(EmuButton::b) = keystate[SDL_SCANCODE_S];
+		m_joypad_state.at(EmuButton::start) = keystate[SDL_SCANCODE_B];
+		m_joypad_state.at(EmuButton::select) = keystate[SDL_SCANCODE_V];
+	}
+	auto CEmulator::button_held(int btn) -> bool {
+		if(btn < 0) return false;
+		if(btn >= EmuButton::num_keys) return false;
+		return m_joypad_state[btn];
+	}
+
 	auto CEmulator::boot() -> void {
 		std::puts("booting rom...");
 		std::printf("mapper: %s\n",mem.m_mapper->name().c_str());
@@ -26,6 +68,12 @@ namespace fern {
 		cpu.step();
 
 		while(!did_quit()) {
+			if(m_debugSkipping) {
+				if(cpu.m_PC == m_debugSkipAddr) {
+					debug_set(true);
+					m_debugSkipping = false;
+				}
+			}
 			// debug process
 			if(m_debugEnable) {
 				char cmdname = 0;
@@ -53,16 +101,9 @@ namespace fern {
 						int to_addr = 0;
 						std::printf("where to? (hex): ");
 						std::scanf("%x",&to_addr);
-						//int iter_count = 0;
-						while(cpu.m_PC != to_addr) {
-							cpu.step();
-							//iter_count += 1;
-							renderer.process_message();
-							if(did_quit()) break;
-							/*if((iter_count%5000)==0) {
-								cpu.print_status();
-							}*/
-						}
+						m_debugSkipAddr = to_addr;
+						m_debugSkipping = true;
+						debug_set(false);
 						break;
 					}
 					default: {
@@ -75,7 +116,7 @@ namespace fern {
 			else {
 				cpu.step();
 			}
-			renderer.process_message();
+			process_message();
 		}
 	}
 	auto CEmulator::load_romfile(const std::string& filename) -> void {

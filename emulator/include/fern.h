@@ -15,6 +15,16 @@ namespace fern {
 	class CEmulatorComponent;
 	class CRenderer;
 
+	namespace EmuButton {
+		enum {
+			up,
+			down,
+			left,
+			right,
+			a,b,start,select,
+			num_keys
+		};
+	}
 	namespace RegisterName {
 		enum {
 			B,C,
@@ -73,8 +83,6 @@ namespace fern {
 			~CRenderer();
 
 			auto window_create() -> void;
-
-			auto process_message() -> void;
 
 			auto present() -> void;
 			auto draw_line(int draw_y) -> void;
@@ -178,7 +186,7 @@ namespace fern {
 		}
 		auto stat_setLYC(bool flag) -> void {
 			m_STAT &= (0xFF ^ 0x04);
-			m_STAT |= (flag<<2);
+			if(flag) m_STAT |= 0x04;
 		}
 		auto stat_lycSame() const -> bool {
 			return (m_STAT & 0x04) != 0;
@@ -209,7 +217,8 @@ namespace fern {
 			auto rombank_current() -> int;
 			auto oam_accessible() -> bool {
 				return ((m_io.stat_getMode()&1) == 0)
-					|| (!m_io.ppu_enabled());
+					|| (!m_io.ppu_enabled())
+					|| (m_io.m_LY >= 144);
 			}
 			auto vram_accessible() -> bool {
 				return (m_io.stat_getMode() != 3)
@@ -260,6 +269,7 @@ namespace fern {
 		public:
 			bool m_should_enableIME;
 			bool m_regIME;
+			bool m_haltwaiting;
 			uint8_t m_regA,m_regF;
 			uint8_t m_regB,m_regC;
 			uint8_t m_regD,m_regE;
@@ -296,6 +306,8 @@ namespace fern {
 			auto call(int addr, int retaddr) -> void;
 			auto calreturn(bool enable_intr = false) -> void;
 
+			auto halt_waitStart() -> void { m_haltwaiting = true; }
+			auto halt_isWaiting() -> bool { return m_haltwaiting; }
 			auto clock_tick(int cyclecnt) -> void;
 
 			auto opcode_clear() -> void;
@@ -362,12 +374,18 @@ namespace fern {
 			bool m_quitflag;
 			bool m_cgbmode;
 			bool m_debugEnable;
+			bool m_debugSkipping;
+			int m_debugSkipAddr;
+			std::array<bool,EmuButton::num_keys> m_joypad_state;
 		public:
 			CCPU cpu;
 			CMem mem;
 			CRenderer renderer;
 
 			CEmulator();
+
+			auto process_message() -> void;
+			auto button_held(int btn) -> bool;
 
 			auto is_cgb() const -> bool { return m_cgbmode; }
 			auto debug_on() const -> bool { return m_debugEnable; }

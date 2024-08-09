@@ -1,150 +1,1029 @@
 #include <fern.h>
 
-#define INSTRFN_NAME(name) instrfn_##name
-#define INSTRFN(name) void INSTRFN_NAME(name)(fern::CCPU* cpu,fern::CEmulator* emu)
-#define INSTRFN_PFX(name) void INSTRFN_NAME(name)(fern::CCPU* cpu,fern::CEmulator* emu, int register_id, int opcode_mode)
+#define INSTRFN_NAME(name) fernOpcodes :: op_##name
+#define fern_opcodefn(name) void op_##name (fern::CCPU* cpu,fern::CEmulator* emu)
+#define fern_opcodepfxfn(name) void op_##name (fern::CCPU* cpu,fern::CEmulator* emu, int register_id, int opcode_mode)
 
-// bitwise AND
-static INSTRFN(and_a_imm8);
-static INSTRFN_PFX(andxor);
-static INSTRFN_PFX(orcp);
+namespace fernOpcodes {
+	// bitwise ops
+	fern_opcodefn(and_a_imm8) {
+		cpu->flag_syncAnd(cpu->m_regA,cpu->read_pc(1));
+		cpu->m_regA &= cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
 
-// arithemetic
-static INSTRFN(inc_b);
-static INSTRFN(inc_c);
-static INSTRFN(inc_d);
-static INSTRFN(inc_e);
-static INSTRFN(inc_h);
-static INSTRFN(inc_l);
-static INSTRFN(inc_a);
+	fern_opcodepfxfn(andxor) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
 
-static INSTRFN(dec_b);
-static INSTRFN(dec_c);
-static INSTRFN(dec_d);
-static INSTRFN(dec_e);
-static INSTRFN(dec_h);
-static INSTRFN(dec_l);
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
 
-static INSTRFN(inc_bc);
-static INSTRFN(inc_de);
-static INSTRFN(inc_hl);
-static INSTRFN(inc_sp);
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
 
-static INSTRFN(dec_bc);
-static INSTRFN(dec_de);
-static INSTRFN(dec_hl);
-static INSTRFN(dec_sp);
+		if(!opcode_mode) {
+			auto result = (cpu->m_regA & cur_reg());
+			cpu->m_regA = result;
+			cpu->flag_setZero(result == 0);
+			cpu->flag_setSubtract(false);
+			cpu->flag_setHalfcarry(true);
+			cpu->flag_setCarry(false);
+		} else {
+			auto result = (cpu->m_regA ^ cur_reg());
+			cpu->m_regA = result;
+			cpu->flag_setZero(result == 0);
+			cpu->flag_setSubtract(false);
+			cpu->flag_setHalfcarry(false);
+			cpu->flag_setCarry(false);
+		}
 
-static INSTRFN(inc_hld);
-static INSTRFN(dec_hld);
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
+	fern_opcodepfxfn(orcp) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
 
-static INSTRFN(add_hl_bc);
-static INSTRFN(add_hl_de);
-static INSTRFN(add_hl_hl);
-static INSTRFN(add_hl_sp);
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
 
-static INSTRFN(add_a_imm8);
-static INSTRFN_PFX(addadc);
-static INSTRFN_PFX(subsbc);
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
 
-// ld
-static INSTRFN(ld_a_imm8);
-static INSTRFN(ld_b_imm8);
-static INSTRFN(ld_c_imm8);
-static INSTRFN(ld_d_imm8);
-static INSTRFN(ld_e_imm8);
-static INSTRFN(ld_h_imm8);
-static INSTRFN(ld_l_imm8);
+		if(!opcode_mode) {
+			auto result = (cpu->m_regA | cur_reg());
+			cpu->m_regA = result;
+			cpu->flag_setZero(result == 0);
+			cpu->flag_setSubtract(false);
+			cpu->flag_setHalfcarry(false);
+			cpu->flag_setCarry(false);
+		} else {
+			cpu->flag_syncCompare(cpu->m_regA,cur_reg());
+		}
 
-static INSTRFN_PFX(ldbldc);
-static INSTRFN_PFX(lddlde);
-static INSTRFN_PFX(ldhldl);
-static INSTRFN_PFX(ldhllda);
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
 
-static INSTRFN(ld_bc_imm16);
-static INSTRFN(ld_de_imm16);
-static INSTRFN(ld_hl_imm16);
-static INSTRFN(ld_sp_imm16);
+	// arithemetic
+	fern_opcodefn(inc_b) {
+		cpu->flag_syncCompareInc(cpu->m_regB);
+		cpu->m_regB += 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(inc_c) {
+		cpu->flag_syncCompareInc(cpu->m_regC);
+		cpu->m_regC += 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(inc_d) {
+		cpu->flag_syncCompareInc(cpu->m_regD);
+		cpu->m_regD += 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(inc_e) {
+		cpu->flag_syncCompareInc(cpu->m_regE);
+		cpu->m_regE += 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(inc_h) {
+		cpu->flag_syncCompareInc(cpu->m_regH);
+		cpu->m_regH += 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(inc_l) {
+		cpu->flag_syncCompareInc(cpu->m_regL);
+		cpu->m_regL += 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(inc_a) {
+		cpu->flag_syncCompareInc(cpu->m_regA);
+		cpu->m_regA += 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
 
-static INSTRFN(ld_a_bc);
-static INSTRFN(ld_a_de);
-static INSTRFN(ld_bc_a);
-static INSTRFN(ld_de_a);
+	fern_opcodefn(dec_b) {
+		cpu->flag_syncCompareDec(cpu->m_regB);
+		cpu->m_regB -= 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(dec_c) {
+		cpu->flag_syncCompareDec(cpu->m_regC);
+		cpu->m_regC -= 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(dec_d) {
+		cpu->flag_syncCompareDec(cpu->m_regD);
+		cpu->m_regD -= 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(dec_e) {
+		cpu->flag_syncCompareDec(cpu->m_regE);
+		cpu->m_regE -= 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(dec_h) {
+		cpu->flag_syncCompareDec(cpu->m_regH);
+		cpu->m_regH -= 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(dec_l) {
+		cpu->flag_syncCompareDec(cpu->m_regL);
+		cpu->m_regL -= 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(dec_a) {
+		cpu->flag_syncCompareDec(cpu->m_regA);
+		cpu->m_regA -= 1;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
 
-static INSTRFN(ld_hli_a);
-static INSTRFN(ld_hld_a);
-static INSTRFN(ld_a_hli);
-static INSTRFN(ld_a_hld);
+	fern_opcodefn(inc_bc) {
+		cpu->bc_set(cpu->reg_bc() + 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(inc_de) {
+		cpu->de_set(cpu->reg_de() + 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(inc_hl) {
+		cpu->hl_set(cpu->reg_hl() + 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(inc_sp) {
+		cpu->sp_set(cpu->m_SP + 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
 
-static INSTRFN(ld_hl_imm8);
+	fern_opcodefn(dec_bc) {
+		cpu->bc_set(cpu->reg_bc() - 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(dec_de) {
+		cpu->de_set(cpu->reg_de() - 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(dec_hl) {
+		cpu->hl_set(cpu->reg_hl() - 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(dec_sp) {
+		cpu->sp_set(cpu->m_SP - 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
 
-static INSTRFN(ld_a16_a);
-static INSTRFN(ld_a_a16);
+	fern_opcodefn(inc_hld) {
+		int data = emu->mem.read(cpu->reg_hl());
+		cpu->flag_syncCompareInc(data);
+		emu->mem.write(cpu->reg_hl(),data + 1);
+		cpu->pc_increment(3);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(dec_hld) {
+		int data = emu->mem.read(cpu->reg_hl());
+		cpu->flag_syncCompareDec(data);
+		emu->mem.write(cpu->reg_hl(),data - 1);
+		cpu->pc_increment(3);
+		cpu->clock_tick(1);
+	}
 
-static INSTRFN(ldh_a8_a);
-static INSTRFN(ldh_a_a8);
-static INSTRFN(ldh_c_a);
-static INSTRFN(ldh_a_c);
+	fern_opcodefn(add_hl_bc) {
+		cpu->flag_syncAdd16(cpu->reg_hl(),cpu->reg_bc());
+		cpu->hl_set(cpu->reg_hl() + cpu->reg_bc());
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(add_hl_de) {
+		cpu->flag_syncAdd16(cpu->reg_hl(),cpu->reg_de());
+		cpu->hl_set(cpu->reg_hl() + cpu->reg_de());
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(add_hl_hl) {
+		cpu->flag_syncAdd16(cpu->reg_hl(),cpu->reg_hl());
+		cpu->hl_set(cpu->reg_hl() + cpu->reg_hl());
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(add_hl_sp) {
+		cpu->flag_syncAdd16(cpu->reg_hl(),cpu->m_SP);
+		cpu->hl_set(cpu->reg_hl() + cpu->m_SP);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
 
-static INSTRFN(cp_imm8);
+	fern_opcodefn(add_a_imm8) {
+		int opB = cpu->read_pc(1);
+		int res_nyb = (cpu->m_regA & 0xF) + (opB & 0xF);
+		int result = static_cast<int>(cpu->m_regA) + opB;
+		cpu->m_regA = result;
+		cpu->flag_setZero(result == 0);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+		cpu->flag_setCarry(result > 255);
+		
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodepfxfn(addadc) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
 
-// jumps & calls
-static INSTRFN(jp_imm16);
-static INSTRFN(jp_hl);
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
 
-static INSTRFN(jr);
-static INSTRFN(jr_nz);
-static INSTRFN(jr_z);
-static INSTRFN(jr_nc);
-static INSTRFN(jr_c);
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
 
-static INSTRFN(call);
-static INSTRFN(call_nz);
-static INSTRFN(call_z);
-static INSTRFN(call_nc);
-static INSTRFN(call_c);
+		if(!opcode_mode) {
+			int res_nyb = (cpu->m_regA & 0xF) + (cur_reg() & 0xF);
+			int result = static_cast<int>(cpu->m_regA) + cur_reg();
+			cpu->m_regA = result;
+			cpu->flag_setZero(result == 0);
+			cpu->flag_setSubtract(false);
+			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+			cpu->flag_setCarry(result > 255);
+		} else {
+			int op2 = cur_reg() + cpu->flag_carry();
+			int res_nyb = (cpu->m_regA & 0xF) + (op2 & 0xF);
+			int result = static_cast<int>(cpu->m_regA) + op2;
+			cpu->m_regA = result;
+			cpu->flag_setZero(result == 0);
+			cpu->flag_setSubtract(false);
+			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+			cpu->flag_setCarry(result > 255);
+		}
 
-static INSTRFN(ret);
-static INSTRFN(reti);
-static INSTRFN(ret_nz);
-static INSTRFN(ret_z);
-static INSTRFN(ret_nc);
-static INSTRFN(ret_c);
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
+	fern_opcodepfxfn(subsbc) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
 
-static INSTRFN(rst_00);
-static INSTRFN(rst_10);
-static INSTRFN(rst_20);
-static INSTRFN(rst_30);
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
 
-static INSTRFN(rst_08);
-static INSTRFN(rst_18);
-static INSTRFN(rst_28);
-static INSTRFN(rst_38);
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
 
-// stack
-static INSTRFN(pop_bc);
-static INSTRFN(pop_de);
-static INSTRFN(pop_hl);
-static INSTRFN(pop_af);
+		if(!opcode_mode) {
+			int res_nyb = (cpu->m_regA & 0xF) - (cur_reg() & 0xF);
+			int result = static_cast<int>(cpu->m_regA) - cur_reg();
+			cpu->flag_setCarry(cur_reg() > cpu->m_regA);
+			cpu->m_regA = result;
+			cpu->flag_setZero(result == 0);
+			cpu->flag_setSubtract(true);
+			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+		} else {
+			std::puts("sbc not implemented");
+			cpu->print_status();
+			std::exit(-1);
 
-static INSTRFN(push_bc);
-static INSTRFN(push_de);
-static INSTRFN(push_hl);
-static INSTRFN(push_af);
+			int op2 = cur_reg() + cpu->flag_carry();
+			int res_nyb = (cpu->m_regA & 0xF) + (op2 & 0xF);
+			int result = static_cast<int>(cpu->m_regA) + op2;
+			cpu->m_regA = result;
+			cpu->flag_setZero(result == 0);
+			cpu->flag_setSubtract(true);
+			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+			cpu->flag_setCarry(result > 255);
+		}
 
-// CB prefix
-static INSTRFN(prefix);
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
 
-// misc
-static INSTRFN(di);
-static INSTRFN(ei);
-static INSTRFN(halt);
-static INSTRFN(nop);
-static INSTRFN(cpl);
+	// loads
+	fern_opcodefn(ld_b_imm8) {
+		cpu->m_regB = cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_c_imm8) {
+		cpu->m_regC = cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_d_imm8) {
+		cpu->m_regD = cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_e_imm8) {
+		cpu->m_regE = cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_h_imm8) {
+		cpu->m_regH = cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_l_imm8) {
+		cpu->m_regL = cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_a_imm8) {
+		cpu->m_regA = cpu->read_pc(1);
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
 
-static INSTRFN(invalid);
-static INSTRFN(unimplemented);
-static INSTRFN_PFX(unimplemented_pfx);
+	fern_opcodepfxfn(ldbldc) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
+
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
+		
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
+
+		if(!opcode_mode) {
+			cpu->m_regB = cur_reg();
+		} else {
+			cpu->m_regC = cur_reg();
+		}
+
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
+	fern_opcodepfxfn(lddlde) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
+
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
+		
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
+
+		if(!opcode_mode) {
+			cpu->m_regD = cur_reg();
+		} else {
+			cpu->m_regE = cur_reg();
+		}
+
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
+	fern_opcodepfxfn(ldhldl) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
+
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
+		
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
+
+		if(!opcode_mode) {
+			cpu->m_regH = cur_reg();
+		} else {
+			cpu->m_regL = cur_reg();
+		}
+
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
+	fern_opcodepfxfn(ldhllda) {
+		auto uses_hl = fern::RegisterName::is_hldata(register_id);
+		if(uses_hl && opcode_mode == 0) {
+			std::puts("unimplemented: HALT");
+			cpu->print_status();
+			std::exit(-1);
+		}
+		
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
+
+		auto cur_reg = [&]() {
+			return *reg_ptrs[register_id];
+		};
+		
+		int clock_ticks = uses_hl ? 2 : 1;
+		int pc_offset = 1;
+
+		if(!opcode_mode) {
+			emu->mem.write(cpu->reg_hl(),cur_reg());
+			clock_ticks = 2;
+		} else {
+			cpu->m_regA = cur_reg();
+		}
+
+		cpu->pc_increment(pc_offset);
+		cpu->clock_tick(clock_ticks);
+	}
+
+	fern_opcodefn(ld_bc_imm16) {
+		cpu->m_regC = cpu->read_pc(1);
+		cpu->m_regB = cpu->read_pc(2);
+		cpu->pc_increment(3);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(ld_de_imm16) {
+		cpu->m_regE = cpu->read_pc(1);
+		cpu->m_regD = cpu->read_pc(2);
+		cpu->pc_increment(3);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(ld_hl_imm16) {
+		cpu->m_regL = cpu->read_pc(1);
+		cpu->m_regH = cpu->read_pc(2);
+		cpu->pc_increment(3);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(ld_sp_imm16) {
+		cpu->m_SP = cpu->read_pc(1) | (cpu->read_pc(2)<<8);
+		cpu->pc_increment(3);
+		cpu->clock_tick(3);
+	}
+
+	fern_opcodefn(ld_a_bc) {
+		cpu->m_regA = emu->mem.read(cpu->reg_bc());
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_a_de) {
+		cpu->m_regA = emu->mem.read(cpu->reg_de());
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_bc_a) {
+		emu->mem.write(cpu->reg_bc(),cpu->m_regA);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_de_a) {
+		emu->mem.write(cpu->reg_de(),cpu->m_regA);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+
+	fern_opcodefn(ld_a_hli) {
+		cpu->m_regA = emu->mem.read(cpu->reg_hl());
+		cpu->hl_set(cpu->reg_hl() + 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_a_hld) {
+		cpu->m_regA = emu->mem.read(cpu->reg_hl());
+		cpu->hl_set(cpu->reg_hl() - 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_hli_a) {
+		emu->mem.write(cpu->reg_hl(),cpu->m_regA);
+		cpu->hl_set(cpu->reg_hl() + 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ld_hld_a) {
+		emu->mem.write(cpu->reg_hl(),cpu->m_regA);
+		cpu->hl_set(cpu->reg_hl() - 1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+
+	fern_opcodefn(ld_hl_imm8) {
+		emu->mem.write(cpu->reg_hl(),cpu->read_pc(1));
+		cpu->pc_increment(2);
+		cpu->clock_tick(3);
+	}
+
+	fern_opcodefn(ld_a16_a) {
+		int addr = cpu->read_pc(1) | (cpu->read_pc(2)<<8);
+		emu->mem.write(addr,cpu->m_regA);
+		cpu->pc_increment(3);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(ld_a_a16) {
+		int addr = cpu->read_pc(1) | (cpu->read_pc(2)<<8);
+		cpu->m_regA = emu->mem.read(addr);
+		cpu->pc_increment(3);
+		cpu->clock_tick(4);
+	}
+
+	// ldh
+	fern_opcodefn(ldh_a8_a) {
+		emu->mem.write(0xFF00 + cpu->read_pc(1),cpu->m_regA);
+		cpu->pc_increment(2);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(ldh_a_a8) {
+		cpu->m_regA = emu->mem.read(0xFF00 + cpu->read_pc(1));
+		cpu->pc_increment(2);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(ldh_c_a) {
+		emu->mem.write(0xFF00 + cpu->m_regC, cpu->m_regA);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(ldh_a_c) {
+		cpu->m_regA = emu->mem.read(0xFF00 + cpu->m_regC);
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
+	}
+
+	// cp
+	fern_opcodefn(cp_imm8) {
+		cpu->flag_syncCompare(cpu->m_regA,cpu->read_pc(1));
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+
+	// jumps
+	fern_opcodefn(jp_imm16) {
+		auto addr_lo = cpu->emu()->mem.read(cpu->m_PC+1);
+		auto addr_hi = cpu->emu()->mem.read(cpu->m_PC+2);
+		cpu->pc_set(addr_lo | (addr_hi<<8));
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(jp_hl) {
+		cpu->pc_set(cpu->reg_hl());
+		cpu->clock_tick(1);
+	}
+
+	fern_opcodefn(jr) {
+		cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
+		cpu->pc_increment(2);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(jr_nz) {
+		if(!cpu->flag_zero()) {
+			cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
+			cpu->pc_increment(2);
+			cpu->clock_tick(3);
+		} else {
+			cpu->pc_increment(2);
+			cpu->clock_tick(2);
+		}
+	}
+	fern_opcodefn(jr_z) {
+		if(cpu->flag_zero()) {
+			cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
+			cpu->pc_increment(2);
+			cpu->clock_tick(3);
+		} else {
+			cpu->pc_increment(2);
+			cpu->clock_tick(2);
+		}
+	}
+	fern_opcodefn(jr_nc) {
+		if(!cpu->flag_carry()) {
+			cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
+			cpu->pc_increment(2);
+			cpu->clock_tick(3);
+		} else {
+			cpu->pc_increment(2);
+			cpu->clock_tick(2);
+		}
+	}
+	fern_opcodefn(jr_c) {
+		if(cpu->flag_carry()) {
+			cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
+			cpu->pc_increment(2);
+			cpu->clock_tick(3);
+		} else {
+			cpu->pc_increment(2);
+			cpu->clock_tick(2);
+		}
+	}
+
+	fern_opcodefn(jp_nz) {
+		if(!cpu->flag_zero()) {
+			cpu->pc_set(cpu->read_pc16(1));
+			cpu->clock_tick(4);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+	fern_opcodefn(jp_z) {
+		if(cpu->flag_zero()) {
+			cpu->pc_set(cpu->read_pc16(1));
+			cpu->clock_tick(4);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+	fern_opcodefn(jp_nc) {
+		if(!cpu->flag_carry()) {
+			cpu->pc_set(cpu->read_pc16(1));
+			cpu->clock_tick(4);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+	fern_opcodefn(jp_c) {
+		if(cpu->flag_carry()) {
+			cpu->pc_set(cpu->read_pc16(1));
+			cpu->clock_tick(4);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+
+	fern_opcodefn(call) {
+		cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
+		cpu->clock_tick(6);
+	}
+	fern_opcodefn(call_nz) {
+		if(!cpu->flag_zero()) {
+			cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
+			cpu->clock_tick(6);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+	fern_opcodefn(call_z) {
+		if(cpu->flag_zero()) {
+			cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
+			cpu->clock_tick(6);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+	fern_opcodefn(call_nc) {
+		if(!cpu->flag_carry()) {
+			cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
+			cpu->clock_tick(6);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+	fern_opcodefn(call_c) {
+		if(cpu->flag_carry()) {
+			cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
+			cpu->clock_tick(6);
+		} else {
+			cpu->pc_increment(3);
+			cpu->clock_tick(3);
+		}
+	}
+
+	fern_opcodefn(ret) {
+		cpu->calreturn();
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(reti) {
+		cpu->calreturn(true);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(ret_nz) {
+		if(!cpu->flag_zero()) {
+			cpu->calreturn();
+			cpu->clock_tick(5);
+		} else {
+			cpu->pc_increment(1);
+			cpu->clock_tick(2);
+		}
+	}
+	fern_opcodefn(ret_z) {
+		if(cpu->flag_zero()) {
+			cpu->calreturn();
+			cpu->clock_tick(5);
+		} else {
+			cpu->pc_increment(1);
+			cpu->clock_tick(2);
+		}
+	}
+	fern_opcodefn(ret_nc) {
+		if(!cpu->flag_carry()) {
+			cpu->calreturn();
+			cpu->clock_tick(5);
+		} else {
+			cpu->pc_increment(1);
+			cpu->clock_tick(2);
+		}
+	}
+	fern_opcodefn(ret_c) {
+		if(cpu->flag_carry()) {
+			cpu->calreturn();
+			cpu->clock_tick(5);
+		} else {
+			cpu->pc_increment(1);
+			cpu->clock_tick(2);
+		}
+	}
+
+	fern_opcodefn(rst_00) {
+		cpu->call(0x00,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(rst_10) {
+		cpu->call(0x10,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(rst_20) {
+		cpu->call(0x20,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(rst_30) {
+		cpu->call(0x30,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+
+	fern_opcodefn(rst_08) {
+		cpu->call(0x08,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(rst_18) {
+		cpu->call(0x18,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(rst_28) {
+		cpu->call(0x28,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(rst_38) {
+		cpu->call(0x38,cpu->m_PC+1);
+		cpu->clock_tick(4);
+	}
+
+	// stack
+	fern_opcodefn(pop_bc) {
+		cpu->bc_set(cpu->stack_pop16());
+		cpu->pc_increment(1);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(pop_de) {
+		cpu->de_set(cpu->stack_pop16());
+		cpu->pc_increment(1);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(pop_hl) {
+		cpu->hl_set(cpu->stack_pop16());
+		cpu->pc_increment(1);
+		cpu->clock_tick(3);
+	}
+	fern_opcodefn(pop_af) {
+		cpu->m_regF = cpu->stack_pop8();
+		cpu->m_regA = cpu->stack_pop8();
+		cpu->pc_increment(1);
+		cpu->clock_tick(3);
+	}
+
+	fern_opcodefn(push_bc) {
+		cpu->stack_push16(cpu->reg_bc());
+		cpu->pc_increment(1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(push_de) {
+		cpu->stack_push16(cpu->reg_de());
+		cpu->pc_increment(1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(push_hl) {
+		cpu->stack_push16(cpu->reg_hl());
+		cpu->pc_increment(1);
+		cpu->clock_tick(4);
+	}
+	fern_opcodefn(push_af) {
+		cpu->stack_push16(cpu->reg_af());
+		cpu->pc_increment(1);
+		cpu->clock_tick(4);
+	}
+
+	// CB prefix
+	fern_opcodefn(prefix) {
+		int prefix_operand = cpu->read_pc(1);
+		int reg_id = prefix_operand & 7;
+		int oper_id = prefix_operand >> 4;
+		int oper_mode = (prefix_operand >> 3) & 1;
+		
+		auto uses_hl = fern::RegisterName::is_hldata(reg_id);
+		uint8_t cur_hldat = 0;
+		if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
+		
+		uint8_t* reg_ptrs[8] = {
+			&cpu->m_regB,&cpu->m_regC,
+			&cpu->m_regD,&cpu->m_regE,
+			&cpu->m_regH,&cpu->m_regL,
+			&cur_hldat,&cpu->m_regA,
+		};
+
+		auto cur_reg = [&]() {
+			return *reg_ptrs[reg_id];
+		};
+		auto reg_write = [&](uint8_t data) {
+			*reg_ptrs[reg_id] = data;
+		};
+
+		int clock_ticks = -1;
+		bool writeback_hldat = false;
+
+		// operation fetching
+		switch(oper_id) {
+			case 0x4:
+			case 0x5:
+			case 0x6:
+			case 0x7: { // BIT
+				int bit_idx = (prefix_operand - 0x40) >> 3;
+				bool flag = (cur_reg() >> bit_idx)&1;
+				cpu->flag_setZero(!flag);
+				cpu->flag_setSubtract(false);
+				cpu->flag_setHalfcarry(true);
+
+				clock_ticks = uses_hl ? 3 : 2;
+				break;
+			}
+			case 0x3: { // SWAP/SRL
+				if(oper_mode == 0) {
+					int lo = cur_reg() & 0xF;
+					int hi = cur_reg() >> 4;
+					reg_write((lo<<4) | hi);
+					cpu->flag_setZero(true);
+					cpu->flag_setSubtract(false);
+					cpu->flag_setHalfcarry(false);
+					cpu->flag_setCarry(false);
+					
+					clock_ticks = uses_hl ? 4 : 2;
+					writeback_hldat = uses_hl;
+				} else {
+					std::puts("unimplemented: SRL");
+					std::exit(-1);
+				}
+				break;
+			}
+			default: {
+				std::printf("unimplemented prefix op (%02Xh)\n",prefix_operand);
+				cpu->print_status();
+				std::exit(-1);
+			}
+		}
+
+		// write back to HL pointer, if needed
+		if(writeback_hldat) {
+			emu->mem.write(cpu->reg_hl(),cur_hldat);
+		}
+
+		if(clock_ticks == -1) {
+			std::puts("prefix opcode error: incorrect clockincrement!");
+			cpu->print_status();
+			std::exit(-1);
+		}
+
+		cpu->pc_increment(2);
+		cpu->clock_tick(clock_ticks);
+	}
+
+	// misc
+	fern_opcodefn(invalid) {
+		std::puts("invalid instruction");
+		cpu->print_status();
+		std::exit(-1);
+	}
+	fern_opcodefn(unimplemented) {
+		std::printf("unimplemented instruction (%02Xh)\n",cpu->m_curopcode);
+		cpu->print_status();
+		std::exit(-1);
+	}
+	fern_opcodepfxfn(unimplemented_pfx) {
+		std::printf("unimplemented instruction prefix (%02Xh)\n",cpu->m_curopcode);
+		cpu->print_status();
+		std::exit(-1);
+	}
+
+	fern_opcodefn(nop) {
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(cpl) {
+		cpu->m_regA ^= 0xFF;
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(di) {
+		cpu->m_regIME = false;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(ei) {
+		cpu->m_should_enableIME = true;
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(halt) {
+		cpu->pc_increment(1);
+
+		if(!cpu->m_regIME) {
+			std::puts("error: halt while IME unset?");
+			cpu->print_status();
+			std::exit(-1);
+		} else {
+			cpu->halt_waitStart();
+			while(cpu->halt_isWaiting()) {
+				cpu->clock_tick(1);
+			}
+		}
+	}
+};
 
 namespace fern {
 	CCPU::CCPU() {
@@ -187,6 +1066,7 @@ namespace fern {
 		opcode_set(0x1D,CCPUInstr(INSTRFN_NAME(dec_e),"dec e"));
 		opcode_set(0x25,CCPUInstr(INSTRFN_NAME(dec_h),"dec h"));
 		opcode_set(0x2D,CCPUInstr(INSTRFN_NAME(dec_l),"dec l"));
+		opcode_set(0x3D,CCPUInstr(INSTRFN_NAME(dec_a),"dec a"));
 		
 		opcode_set(0x03,CCPUInstr(INSTRFN_NAME(inc_bc),"inc bc"));
 		opcode_set(0x13,CCPUInstr(INSTRFN_NAME(inc_de),"inc de"));
@@ -247,14 +1127,18 @@ namespace fern {
 		opcode_set(0xFE,CCPUInstr(INSTRFN_NAME(cp_imm8),"cp a, imm8"));
 
 		// jumps & calls
-		opcode_set(0xC3,CCPUInstr(INSTRFN_NAME(jp_imm16),"jp imm16"));
-		opcode_set(0xE9,CCPUInstr(INSTRFN_NAME(jp_hl),"jp hl"));
-
 		opcode_set(0x18,CCPUInstr(INSTRFN_NAME(jr),"jr imm8"));
 		opcode_set(0x20,CCPUInstr(INSTRFN_NAME(jr_nz),"jr nz,imm8"));
 		opcode_set(0x28,CCPUInstr(INSTRFN_NAME(jr_z),"jr z,imm8"));
 		opcode_set(0x30,CCPUInstr(INSTRFN_NAME(jr_nc),"jr nc,imm8"));
 		opcode_set(0x38,CCPUInstr(INSTRFN_NAME(jr_c),"jr c,imm8"));
+
+		opcode_set(0xC3,CCPUInstr(INSTRFN_NAME(jp_imm16),"jp imm16"));
+		opcode_set(0xE9,CCPUInstr(INSTRFN_NAME(jp_hl),"jp hl"));
+		opcode_set(0xC2,CCPUInstr(INSTRFN_NAME(jp_nz),"jp nz,imm16"));
+		opcode_set(0xCA,CCPUInstr(INSTRFN_NAME(jp_z),"jp z,imm16"));
+		opcode_set(0xD2,CCPUInstr(INSTRFN_NAME(jp_nc),"jp nc,imm16"));
+		opcode_set(0xDA,CCPUInstr(INSTRFN_NAME(jp_c),"jp c,imm16"));
 
 		opcode_set(0xCD,CCPUInstr(INSTRFN_NAME(call),"call imm16"));
 		opcode_set(0xC4,CCPUInstr(INSTRFN_NAME(call_nz),"call nz,imm16"));
@@ -307,6 +1191,7 @@ namespace fern {
 	auto CCPU::reset() -> void {
 		m_should_enableIME = false;
 		m_regIME = false;
+		m_haltwaiting = false;
 
 		m_regF = 0;
 		m_regB = 0x00;
@@ -351,6 +1236,7 @@ namespace fern {
 		std::printf("\tDE:  %04Xh IE:   %d\n",reg_de(),mem.m_io.m_IE);
 		std::printf("\tHL:  %04Xh IF:   %d\n",reg_hl(),mem.m_io.m_IF);
 		std::printf("\tSTAT:%4Xh IME:  %d\n",mem.m_io.m_STAT,m_regIME);
+		std::printf("\tDC:  %4d\n",m_dotclock);
 	}
 	
 	auto CCPU::flag_syncAnd(int opA,int opB) -> void {
@@ -435,9 +1321,8 @@ namespace fern {
 	}
 	auto CCPU::calreturn(bool enable_intr) -> void {
 		if(enable_intr) {
-			std::puts("reti not implemented!");
-			print_status();
-			std::exit(-1);
+			m_PC = stack_pop16();
+			m_regIME = true;
 		} else {
 			m_PC = stack_pop16();
 		}
@@ -473,7 +1358,7 @@ namespace fern {
 			// call function with register ID & mode
 			opcode.fn(this,m_emu,opcode_num & 7,opcode_mode);
 		} else {
-			std::printf("bad opcode...");
+			std::printf("unknown opcode: $%02X\n",opcode_num);
 			print_status();
 			std::exit(-1);
 		}
@@ -499,8 +1384,6 @@ namespace fern {
 			mem.m_io.m_LY += 1;
 			if(mem.m_io.m_LY > 153) {
 				mem.m_io.m_LY = 0;
-				//std::puts("newline!");
-				//print_status();
 				frame_ended = true;
 			}
 
@@ -509,7 +1392,7 @@ namespace fern {
 		} else {
 			if(m_dotclock < 80) {
 				mem.m_io.stat_setMode(2);
-			} else if(m_dotclock >= 80 || m_dotclock < (80+172)) {
+			} else if(m_dotclock >= 80 && m_dotclock < (80+172)) {
 				mem.m_io.stat_setMode(3);
 			} else {
 				mem.m_io.stat_setMode(0);
@@ -541,6 +1424,10 @@ namespace fern {
 				if((cur_mode == 2) && (mem.m_io.m_STAT&0x20)) {
 					do_setflag = true;
 				}
+
+				if(cur_mode == 1) {
+					mem.m_io.m_IF |= 0x01;
+				}
 				mem.m_io.m_IF |= do_setflag ? 0x2 : 0;
 			}
 			if((mem.m_io.m_STAT & 0x40) && mem.m_io.stat_lycSame()) {
@@ -548,14 +1435,40 @@ namespace fern {
 			}
 		}
 
-		// deal with interrupts, if enabled.
+		// deal with interrupts, if enabled. ------------@/
 		if(m_regIME) {
+			if((mem.m_io.m_IF & mem.m_io.m_IE) != 0) {
+				m_haltwaiting = false;	
+			}
+
 			// LCD interrupt
-			if(mem.interrupt_match(0x2)) {
+			if(mem.interrupt_match(0x1)) {
+				mem.interrupt_clear(0x1);
+				m_regIME = false;
+				stack_push16(m_PC);
+				m_PC = 0x40;
+			}
+			// vblank interrupt
+			else if(mem.interrupt_match(0x2)) {
 				mem.interrupt_clear(0x2);
 				m_regIME = false;
 				stack_push16(m_PC);
 				m_PC = 0x48;
+			}
+			// timer interrupt
+			else if(mem.interrupt_match(0x04)) {
+				std::puts("unimplemented interrupt");
+				std::exit(-1);
+			}
+			// serial interrupt
+			else if(mem.interrupt_match(0x08)) {
+				std::puts("unimplemented interrupt");
+				std::exit(-1);
+			}
+			// joypad interrupt
+			else if(mem.interrupt_match(0x10)) {
+				std::puts("unimplemented interrupt");
+				std::exit(-1);
 			}
 		}
 
@@ -569,977 +1482,6 @@ namespace fern {
 		if(frame_ended) {
 			emu()->renderer.present();
 		}
-
-		
 	}
-}
-
-// bitwise ops
-static INSTRFN(and_a_imm8) {
-	cpu->flag_syncAnd(cpu->m_regA,cpu->read_pc(1));
-	cpu->m_regA &= cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-
-static INSTRFN_PFX(andxor) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		auto result = (cpu->m_regA & cur_reg());
-		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
-		cpu->flag_setSubtract(false);
-		cpu->flag_setHalfcarry(true);
-		cpu->flag_setCarry(false);
-	} else {
-		auto result = (cpu->m_regA ^ cur_reg());
-		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
-		cpu->flag_setSubtract(false);
-		cpu->flag_setHalfcarry(false);
-		cpu->flag_setCarry(false);
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-static INSTRFN_PFX(orcp) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		auto result = (cpu->m_regA | cur_reg());
-		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
-		cpu->flag_setSubtract(false);
-		cpu->flag_setHalfcarry(false);
-		cpu->flag_setCarry(false);
-	} else {
-		cpu->flag_syncCompare(cpu->m_regA,cur_reg());
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-
-// arithemetic
-static INSTRFN(inc_b) {
-	cpu->flag_syncCompareInc(cpu->m_regB);
-	cpu->m_regB += 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(inc_c) {
-	cpu->flag_syncCompareInc(cpu->m_regC);
-	cpu->m_regC += 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(inc_d) {
-	cpu->flag_syncCompareInc(cpu->m_regD);
-	cpu->m_regD += 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(inc_e) {
-	cpu->flag_syncCompareInc(cpu->m_regE);
-	cpu->m_regE += 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(inc_h) {
-	cpu->flag_syncCompareInc(cpu->m_regH);
-	cpu->m_regH += 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(inc_l) {
-	cpu->flag_syncCompareInc(cpu->m_regL);
-	cpu->m_regL += 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(inc_a) {
-	cpu->flag_syncCompareInc(cpu->m_regA);
-	cpu->m_regA += 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-
-static INSTRFN(dec_b) {
-	cpu->flag_syncCompareDec(cpu->m_regB);
-	cpu->m_regB -= 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(dec_c) {
-	cpu->flag_syncCompareDec(cpu->m_regC);
-	cpu->m_regC -= 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(dec_d) {
-	cpu->flag_syncCompareDec(cpu->m_regD);
-	cpu->m_regD -= 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(dec_e) {
-	cpu->flag_syncCompareDec(cpu->m_regE);
-	cpu->m_regE -= 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(dec_h) {
-	cpu->flag_syncCompareDec(cpu->m_regH);
-	cpu->m_regH -= 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(dec_l) {
-	cpu->flag_syncCompareDec(cpu->m_regL);
-	cpu->m_regL -= 1;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-
-static INSTRFN(inc_bc) {
-	cpu->bc_set(cpu->reg_bc() + 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(inc_de) {
-	cpu->de_set(cpu->reg_de() + 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(inc_hl) {
-	cpu->hl_set(cpu->reg_hl() + 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(inc_sp) {
-	cpu->sp_set(cpu->m_SP + 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-
-static INSTRFN(dec_bc) {
-	cpu->bc_set(cpu->reg_bc() - 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(dec_de) {
-	cpu->de_set(cpu->reg_de() - 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(dec_hl) {
-	cpu->hl_set(cpu->reg_hl() - 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(dec_sp) {
-	cpu->sp_set(cpu->m_SP - 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-
-static INSTRFN(inc_hld) {
-	int data = emu->mem.read(cpu->reg_hl());
-	cpu->flag_syncCompareInc(data);
-	emu->mem.write(cpu->reg_hl(),data + 1);
-	cpu->pc_increment(3);
-	cpu->clock_tick(1);
-}
-static INSTRFN(dec_hld) {
-	int data = emu->mem.read(cpu->reg_hl());
-	cpu->flag_syncCompareDec(data);
-	emu->mem.write(cpu->reg_hl(),data - 1);
-	cpu->pc_increment(3);
-	cpu->clock_tick(1);
-}
-
-static INSTRFN(add_hl_bc) {
-	cpu->flag_syncAdd16(cpu->reg_hl(),cpu->reg_bc());
-	cpu->hl_set(cpu->reg_hl() + cpu->reg_bc());
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(add_hl_de) {
-	cpu->flag_syncAdd16(cpu->reg_hl(),cpu->reg_de());
-	cpu->hl_set(cpu->reg_hl() + cpu->reg_de());
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(add_hl_hl) {
-	cpu->flag_syncAdd16(cpu->reg_hl(),cpu->reg_hl());
-	cpu->hl_set(cpu->reg_hl() + cpu->reg_hl());
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(add_hl_sp) {
-	cpu->flag_syncAdd16(cpu->reg_hl(),cpu->m_SP);
-	cpu->hl_set(cpu->reg_hl() + cpu->m_SP);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-
-static INSTRFN(add_a_imm8) {
-	int opB = cpu->read_pc(1);
-	int res_nyb = (cpu->m_regA & 0xF) + (opB & 0xF);
-	int result = static_cast<int>(cpu->m_regA) + opB;
-	cpu->m_regA = result;
-	cpu->flag_setZero(result == 0);
-	cpu->flag_setSubtract(false);
-	cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-	cpu->flag_setCarry(result > 255);
-	
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-static INSTRFN_PFX(addadc) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		int res_nyb = (cpu->m_regA & 0xF) + (cur_reg() & 0xF);
-		int result = static_cast<int>(cpu->m_regA) + cur_reg();
-		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
-		cpu->flag_setSubtract(false);
-		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-		cpu->flag_setCarry(result > 255);
-	} else {
-		int op2 = cur_reg() + cpu->flag_carry();
-		int res_nyb = (cpu->m_regA & 0xF) + (op2 & 0xF);
-		int result = static_cast<int>(cpu->m_regA) + op2;
-		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
-		cpu->flag_setSubtract(false);
-		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-		cpu->flag_setCarry(result > 255);
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-static INSTRFN_PFX(subsbc) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		int res_nyb = (cpu->m_regA & 0xF) - (cur_reg() & 0xF);
-		int result = static_cast<int>(cpu->m_regA) - cur_reg();
-		cpu->flag_setCarry(cur_reg() > cpu->m_regA);
-		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
-		cpu->flag_setSubtract(true);
-		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-	} else {
-		std::puts("sbc not implemented");
-		cpu->print_status();
-		std::exit(-1);
-
-		int op2 = cur_reg() + cpu->flag_carry();
-		int res_nyb = (cpu->m_regA & 0xF) + (op2 & 0xF);
-		int result = static_cast<int>(cpu->m_regA) + op2;
-		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
-		cpu->flag_setSubtract(true);
-		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-		cpu->flag_setCarry(result > 255);
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-
-// loads
-static INSTRFN(ld_b_imm8) {
-	cpu->m_regB = cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_c_imm8) {
-	cpu->m_regC = cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_d_imm8) {
-	cpu->m_regD = cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_e_imm8) {
-	cpu->m_regE = cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_h_imm8) {
-	cpu->m_regH = cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_l_imm8) {
-	cpu->m_regL = cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_a_imm8) {
-	cpu->m_regA = cpu->read_pc(1);
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-
-static INSTRFN_PFX(ldbldc) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-	
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		cpu->m_regB = cur_reg();
-	} else {
-		cpu->m_regC = cur_reg();
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-static INSTRFN_PFX(lddlde) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-	
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		cpu->m_regD = cur_reg();
-	} else {
-		cpu->m_regE = cur_reg();
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-static INSTRFN_PFX(ldhldl) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-	
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		cpu->m_regH = cur_reg();
-	} else {
-		cpu->m_regL = cur_reg();
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-static INSTRFN_PFX(ldhllda) {
-	auto uses_hl = fern::RegisterName::is_hldata(register_id);
-	if(uses_hl && opcode_mode == 0) {
-		std::puts("unimplemented: HALT");
-		cpu->print_status();
-		std::exit(-1);
-	}
-	
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[register_id];
-	};
-	
-	int clock_ticks = uses_hl ? 2 : 1;
-	int pc_offset = 1;
-
-	if(!opcode_mode) {
-		emu->mem.write(cpu->reg_hl(),cur_reg());
-		clock_ticks = 2;
-	} else {
-		cpu->m_regA = cur_reg();
-	}
-
-	cpu->pc_increment(pc_offset);
-	cpu->clock_tick(clock_ticks);
-}
-
-static INSTRFN(ld_bc_imm16) {
-	cpu->m_regC = cpu->read_pc(1);
-	cpu->m_regB = cpu->read_pc(2);
-	cpu->pc_increment(3);
-	cpu->clock_tick(3);
-}
-static INSTRFN(ld_de_imm16) {
-	cpu->m_regE = cpu->read_pc(1);
-	cpu->m_regD = cpu->read_pc(2);
-	cpu->pc_increment(3);
-	cpu->clock_tick(3);
-}
-static INSTRFN(ld_hl_imm16) {
-	cpu->m_regL = cpu->read_pc(1);
-	cpu->m_regH = cpu->read_pc(2);
-	cpu->pc_increment(3);
-	cpu->clock_tick(3);
-}
-static INSTRFN(ld_sp_imm16) {
-	cpu->m_SP = cpu->read_pc(1) | (cpu->read_pc(2)<<8);
-	cpu->pc_increment(3);
-	cpu->clock_tick(3);
-}
-
-static INSTRFN(ld_a_bc) {
-	cpu->m_regA = emu->mem.read(cpu->reg_bc());
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_a_de) {
-	cpu->m_regA = emu->mem.read(cpu->reg_de());
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_bc_a) {
-	emu->mem.write(cpu->reg_bc(),cpu->m_regA);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_de_a) {
-	emu->mem.write(cpu->reg_de(),cpu->m_regA);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-
-static INSTRFN(ld_a_hli) {
-	cpu->m_regA = emu->mem.read(cpu->reg_hl());
-	cpu->hl_set(cpu->reg_hl() + 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_a_hld) {
-	cpu->m_regA = emu->mem.read(cpu->reg_hl());
-	cpu->hl_set(cpu->reg_hl() - 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_hli_a) {
-	emu->mem.write(cpu->reg_hl(),cpu->m_regA);
-	cpu->hl_set(cpu->reg_hl() + 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ld_hld_a) {
-	emu->mem.write(cpu->reg_hl(),cpu->m_regA);
-	cpu->hl_set(cpu->reg_hl() - 1);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-
-static INSTRFN(ld_hl_imm8) {
-	emu->mem.write(cpu->reg_hl(),cpu->read_pc(1));
-	cpu->pc_increment(2);
-	cpu->clock_tick(3);
-}
-
-static INSTRFN(ld_a16_a) {
-	int addr = cpu->read_pc(1) | (cpu->read_pc(2)<<8);
-	emu->mem.write(addr,cpu->m_regA);
-	cpu->pc_increment(3);
-	cpu->clock_tick(4);
-}
-static INSTRFN(ld_a_a16) {
-	int addr = cpu->read_pc(1) | (cpu->read_pc(2)<<8);
-	cpu->m_regA = emu->mem.read(addr);
-	cpu->pc_increment(3);
-	cpu->clock_tick(4);
-}
-
-// ldh
-static INSTRFN(ldh_a8_a) {
-	emu->mem.write(0xFF00 + cpu->read_pc(1),cpu->m_regA);
-	cpu->pc_increment(2);
-	cpu->clock_tick(3);
-}
-static INSTRFN(ldh_a_a8) {
-	cpu->m_regA = emu->mem.read(0xFF00 + cpu->read_pc(1));
-	cpu->pc_increment(2);
-	cpu->clock_tick(3);
-}
-static INSTRFN(ldh_c_a) {
-	emu->mem.write(0xFF00 + cpu->m_regC, cpu->m_regA);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-static INSTRFN(ldh_a_c) {
-	cpu->m_regA = emu->mem.read(0xFF00 + cpu->m_regC);
-	cpu->pc_increment(1);
-	cpu->clock_tick(2);
-}
-
-// cp
-static INSTRFN(cp_imm8) {
-	cpu->flag_syncCompare(cpu->m_regA,cpu->read_pc(1));
-	cpu->pc_increment(2);
-	cpu->clock_tick(2);
-}
-
-// jumps
-static INSTRFN(jp_imm16) {
-	auto addr_lo = cpu->emu()->mem.read(cpu->m_PC+1);
-	auto addr_hi = cpu->emu()->mem.read(cpu->m_PC+2);
-	cpu->pc_set(addr_lo | (addr_hi<<8));
-	cpu->clock_tick(4);
-}
-static INSTRFN(jp_hl) {
-	cpu->pc_set(cpu->reg_hl());
-	cpu->clock_tick(1);
-}
-
-static INSTRFN(jr) {
-	cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
-	cpu->pc_increment(2);
-	cpu->clock_tick(3);
-}
-static INSTRFN(jr_nz) {
-	if(!cpu->flag_zero()) {
-		cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
-		cpu->pc_increment(2);
-		cpu->clock_tick(3);
-	} else {
-		cpu->pc_increment(2);
-		cpu->clock_tick(2);
-	}
-}
-static INSTRFN(jr_z) {
-	if(cpu->flag_zero()) {
-		cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
-		cpu->pc_increment(2);
-		cpu->clock_tick(3);
-	} else {
-		cpu->pc_increment(2);
-		cpu->clock_tick(2);
-	}
-}
-static INSTRFN(jr_nc) {
-	if(!cpu->flag_carry()) {
-		cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
-		cpu->pc_increment(2);
-		cpu->clock_tick(3);
-	} else {
-		cpu->pc_increment(2);
-		cpu->clock_tick(2);
-	}
-}
-static INSTRFN(jr_c) {
-	if(cpu->flag_carry()) {
-		cpu->jump_rel(static_cast<int8_t>(cpu->read_pc(1)));
-		cpu->pc_increment(2);
-		cpu->clock_tick(3);
-	} else {
-		cpu->pc_increment(2);
-		cpu->clock_tick(2);
-	}
-}
-
-static INSTRFN(call) {
-	cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
-	cpu->clock_tick(6);
-}
-static INSTRFN(call_nz) {
-	if(!cpu->flag_zero()) {
-		cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
-		cpu->clock_tick(6);
-	} else {
-		cpu->pc_increment(3);
-		cpu->clock_tick(3);
-	}
-}
-static INSTRFN(call_z) {
-	if(cpu->flag_zero()) {
-		cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
-		cpu->clock_tick(6);
-	} else {
-		cpu->pc_increment(3);
-		cpu->clock_tick(3);
-	}
-}
-static INSTRFN(call_nc) {
-	if(!cpu->flag_carry()) {
-		cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
-		cpu->clock_tick(6);
-	} else {
-		cpu->pc_increment(3);
-		cpu->clock_tick(3);
-	}
-}
-static INSTRFN(call_c) {
-	if(cpu->flag_carry()) {
-		cpu->call(cpu->read_pc16(1),cpu->m_PC+3);
-		cpu->clock_tick(6);
-	} else {
-		cpu->pc_increment(3);
-		cpu->clock_tick(3);
-	}
-}
-
-static INSTRFN(ret) {
-	cpu->calreturn();
-	cpu->clock_tick(4);
-}
-static INSTRFN(reti) {
-	cpu->calreturn(true);
-	cpu->clock_tick(4);
-}
-static INSTRFN(ret_nz) {
-	if(!cpu->flag_zero()) {
-		cpu->calreturn();
-		cpu->clock_tick(5);
-	} else {
-		cpu->pc_increment(1);
-		cpu->clock_tick(2);
-	}
-}
-static INSTRFN(ret_z) {
-	if(cpu->flag_zero()) {
-		cpu->calreturn();
-		cpu->clock_tick(5);
-	} else {
-		cpu->pc_increment(1);
-		cpu->clock_tick(2);
-	}
-}
-static INSTRFN(ret_nc) {
-	if(!cpu->flag_carry()) {
-		cpu->calreturn();
-		cpu->clock_tick(5);
-	} else {
-		cpu->pc_increment(1);
-		cpu->clock_tick(2);
-	}
-}
-static INSTRFN(ret_c) {
-	if(cpu->flag_carry()) {
-		cpu->calreturn();
-		cpu->clock_tick(5);
-	} else {
-		cpu->pc_increment(1);
-		cpu->clock_tick(2);
-	}
-}
-
-static INSTRFN(rst_00) {
-	cpu->call(0x00,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(rst_10) {
-	cpu->call(0x10,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(rst_20) {
-	cpu->call(0x20,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(rst_30) {
-	cpu->call(0x30,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-
-static INSTRFN(rst_08) {
-	cpu->call(0x08,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(rst_18) {
-	cpu->call(0x18,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(rst_28) {
-	cpu->call(0x28,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(rst_38) {
-	cpu->call(0x38,cpu->m_PC+1);
-	cpu->clock_tick(4);
-}
-
-// stack
-static INSTRFN(pop_bc) {
-	cpu->bc_set(cpu->stack_pop16());
-	cpu->pc_increment(1);
-	cpu->clock_tick(3);
-}
-static INSTRFN(pop_de) {
-	cpu->de_set(cpu->stack_pop16());
-	cpu->pc_increment(1);
-	cpu->clock_tick(3);
-}
-static INSTRFN(pop_hl) {
-	cpu->hl_set(cpu->stack_pop16());
-	cpu->pc_increment(1);
-	cpu->clock_tick(3);
-}
-static INSTRFN(pop_af) {
-	cpu->m_regF = cpu->stack_pop8();
-	cpu->m_regA = cpu->stack_pop8();
-	cpu->pc_increment(1);
-	cpu->clock_tick(3);
-}
-
-static INSTRFN(push_bc) {
-	cpu->stack_push16(cpu->reg_bc());
-	cpu->pc_increment(1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(push_de) {
-	cpu->stack_push16(cpu->reg_de());
-	cpu->pc_increment(1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(push_hl) {
-	cpu->stack_push16(cpu->reg_hl());
-	cpu->pc_increment(1);
-	cpu->clock_tick(4);
-}
-static INSTRFN(push_af) {
-	cpu->stack_push16(cpu->reg_af());
-	cpu->pc_increment(1);
-	cpu->clock_tick(4);
-}
-
-// CB prefix
-static INSTRFN(prefix) {
-	int prefix_operand = cpu->read_pc(1);
-	int reg_id = prefix_operand & 7;
-	int oper_id = prefix_operand >> 4;
-	int oper_mode = (prefix_operand >> 3) & 1;
-	
-	auto uses_hl = fern::RegisterName::is_hldata(reg_id);
-	uint8_t cur_hldat = 0;
-	if(uses_hl) cur_hldat = emu->mem.read(cpu->reg_hl());
-	
-	uint8_t* reg_ptrs[8] = {
-		&cpu->m_regB,&cpu->m_regC,
-		&cpu->m_regD,&cpu->m_regE,
-		&cpu->m_regH,&cpu->m_regL,
-		&cur_hldat,&cpu->m_regA,
-	};
-
-	auto cur_reg = [&]() {
-		return *reg_ptrs[reg_id];
-	};
-	auto reg_write = [&](uint8_t data) {
-		*reg_ptrs[reg_id] = data;
-	};
-
-	int clock_ticks = -1;
-	bool writeback_hldat = false;
-
-	// operation fetching
-	switch(oper_id) {
-		case 0x4:
-		case 0x5:
-		case 0x6:
-		case 0x7: { // BIT
-			int bit_idx = (prefix_operand - 0x40) >> 3;
-			bool flag = (cur_reg() >> bit_idx)&1;
-			cpu->flag_setZero(!flag);
-			cpu->flag_setSubtract(false);
-			cpu->flag_setHalfcarry(true);
-
-			clock_ticks = uses_hl ? 3 : 2;
-			break;
-		}
-		case 0x3: { // SWAP/SRL
-			if(oper_mode == 0) {
-				int lo = cur_reg() & 0xF;
-				int hi = cur_reg() >> 4;
-				reg_write((lo<<4) | hi);
-				cpu->flag_setZero(true);
-				cpu->flag_setSubtract(false);
-				cpu->flag_setHalfcarry(false);
-				cpu->flag_setCarry(false);
-				
-				clock_ticks = uses_hl ? 4 : 2;
-				writeback_hldat = uses_hl;
-			} else {
-				std::puts("unimplemented: SRL");
-				std::exit(-1);
-			}
-			break;
-		}
-		default: {
-			std::printf("unimplemented prefix op (%02Xh)\n",prefix_operand);
-			cpu->print_status();
-			std::exit(-1);
-		}
-	}
-
-	// write back to HL pointer, if needed
-	if(writeback_hldat) {
-		emu->mem.write(cpu->reg_hl(),cur_hldat);
-	}
-
-	if(clock_ticks == -1) {
-		std::puts("prefix opcode error: incorrect clockincrement!");
-		cpu->print_status();
-		std::exit(-1);
-	}
-
-	cpu->pc_increment(2);
-	cpu->clock_tick(clock_ticks);
-}
-
-// misc
-static INSTRFN(invalid) {
-	std::puts("invalid instruction");
-	cpu->print_status();
-	std::exit(-1);
-}
-static INSTRFN(unimplemented) {
-	std::printf("unimplemented instruction (%02Xh)\n",cpu->m_curopcode);
-	cpu->print_status();
-	std::exit(-1);
-}
-static INSTRFN_PFX(unimplemented_pfx) {
-	std::printf("unimplemented instruction prefix (%02Xh)\n",cpu->m_curopcode);
-	cpu->print_status();
-	std::exit(-1);
-}
-
-static INSTRFN(nop) {
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(cpl) {
-	cpu->m_regA ^= 0xFF;
-	cpu->flag_setSubtract(false);
-	cpu->flag_setHalfcarry(false);
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(di) {
-	cpu->m_regIME = false;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(ei) {
-	cpu->m_should_enableIME = true;
-	cpu->pc_increment(1);
-	cpu->clock_tick(1);
-}
-static INSTRFN(halt) {
-	//cpu->pc_increment(1);
-	//while(1) {
-		cpu->clock_tick(1);
-	//	emu->renderer.process_message();
-	//}
 }
 
