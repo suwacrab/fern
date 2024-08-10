@@ -8,8 +8,6 @@ static void print_usage();
 static void assert_exit(bool cond, const std::string& str);
 
 int main(int argc,const char *argv[]) {
-	std::puts("hello");
-	
 	if(argc <= 1) {
 		std::puts("error: not enough arguments");
 		print_usage();
@@ -47,11 +45,16 @@ int main(int argc,const char *argv[]) {
 		if(arg1 == "--help") {
 			print_usage();
 			std::exit(0);
-		} else if(arg1 == "-v") {
+		} 
+		else if(arg1 == "-g") {
+			flag_debug = true;
+		} 
+		else if(arg1 == "-v") {
 			//assert_exit(arg_valid(),"mapconv: error: no output file specified");
 			//filename_output = arg_read();
 			flag_verbose = true;
-		} else {
+		} 
+		else {
 			if(!filename_rom.empty()) {
 				std::printf("error: unknown argument '%s'\n",
 					arg1.c_str()
@@ -66,6 +69,7 @@ int main(int argc,const char *argv[]) {
 	std::printf("verbose: %d\n",flag_verbose);
 
 	auto emu = std::make_shared<fern::CEmulator>();
+	emu->debug_set(flag_debug);
 	emu->load_romfile(filename_rom);
 	emu->boot();
 
@@ -82,8 +86,9 @@ static void print_usage() {
 	std::puts(
 		"fern 0.01\n"
 		"usage: fern <source rom> <options>\n"
-		"\t-v                     verbose flag\n"
-		"\t--help                 Display help"
+		"\t-g        debug flag\n"
+		"\t-v        verbose flag\n"
+		"\t--help    Display help"
 	);
 }
 

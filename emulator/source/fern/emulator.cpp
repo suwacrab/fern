@@ -24,7 +24,6 @@ namespace fern {
 		renderer.window_create();
 	}
 
-
 	auto CEmulator::process_message() -> void {
 		SDL_Event eve;
 		while(SDL_PollEvent(&eve)) {
