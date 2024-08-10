@@ -11,10 +11,17 @@ namespace fern {
 	}
 
 	auto CRenderer::window_create() -> void {
-		SDL_CreateWindowAndRenderer(
-			160,144,0,
-			&m_window,
-			&m_renderer
+		m_window = SDL_CreateWindow("fern",
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			160,144,
+			0
+		);
+		
+		m_renderer = SDL_CreateRenderer(
+			m_window,-1,
+			SDL_RENDERER_SOFTWARE
+				| SDL_RENDERER_PRESENTVSYNC
 		);
 	}
 
@@ -66,16 +73,18 @@ namespace fern {
 		const size_t addr_mapbase = 0x1800;
 		const size_t addr_mapline = addr_mapbase + ((draw_y/8) * 0x20);
 
+		const int bgscroll_x = mem.m_io.m_SCX;
+		const int bgscroll_y = mem.m_io.m_SCY;
 		for(int draw_x=0; draw_x<160; draw_x++) {
-			int fetch_x = draw_x;
+			int fetch_x = (bgscroll_x + draw_x) & 0xFF;
 			// fetch tile
 			int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
 			tile -= 0x80;
 			int tileaddr = addr_chrbase + tile * 0x10;
 			// get pixel
 			tileaddr += (draw_y&7)*2;
-			int lineA = mem.m_vram.at(tileaddr);
-			int lineB = mem.m_vram.at(tileaddr+1);
+			int lineA = mem.m_vram[tileaddr];
+			int lineB = mem.m_vram[tileaddr+1];
 			int dotA = (lineA >> (7-(fetch_x&7))) & 1;
 			int dotB = (lineB >> (7-(fetch_x&7))) & 1;
 			int dot = dotA | (dotB<<1);
@@ -115,8 +124,8 @@ namespace fern {
 			int tileaddr = 0x0000 + (oamdata[2] * 0x10);
 			tileaddr += line_y * 2;
 			if(spr_size2x) tileaddr &= 0xFFFE;
-			int lineA = mem.m_vram.at(tileaddr);
-			int lineB = mem.m_vram.at(tileaddr+1);
+			int lineA = mem.m_vram[tileaddr];
+			int lineB = mem.m_vram[tileaddr+1];
 
 			for(int ix=0; ix<8; ix++) {
 				int x = ix;
@@ -128,9 +137,8 @@ namespace fern {
 				int dot = dotA | (dotB<<1);
 				if(dot == 0) continue;
 				if(flipX) x = (7-x);
-				m_screen.dot_set(oamdat_x+x,draw_y,
-					palet_gray.at(cur_paltable.at(dot))
-				);
+				m_screen.dot_access(oamdat_x+x,draw_y) = 
+					palet_gray.at(cur_paltable.at(dot));
 			}
 		}
 	}

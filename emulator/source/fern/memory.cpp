@@ -193,9 +193,9 @@ namespace fern {
 		if(vram_accessible()) {
 			m_vram[addr] = data;
 		} else {
-			std::printf("attempt to write to vram in mode 3 (%04Xh)\n",addr);
-			emu()->cpu.print_status();
-			std::exit(-1);
+		//	std::printf("attempt to write to vram in mode 3 (%04Xh)\n",addr);
+		//	emu()->cpu.print_status();
+		//	std::exit(-1);
 		}
 	}
 	auto CMem::write_hram(int addr,int data) -> void {
@@ -389,8 +389,8 @@ namespace fern {
 					int src_addr = (data<<8);
 					int out_addr = 0xFE00;
 					for(int i=0; i<0xA0; i++) {
-						write(out_addr + i,read(src_addr + i));
-						emu()->cpu.clock_tick(4);
+						m_oam[i] = read(src_addr + i);
+						emu()->cpu.clock_tick(1);
 					}
 					break;
 				}

@@ -162,7 +162,6 @@ namespace fernOpcodes {
 		cpu->clock_tick(1);
 	}
 
-
 	// arithemetic
 	fern_opcodefn(inc_b) {
 		cpu->flag_syncCompareInc(cpu->m_regB);
@@ -345,19 +344,6 @@ namespace fernOpcodes {
 		cpu->pc_increment(2);
 		cpu->clock_tick(2);
 	}
-	fern_opcodefn(sub_a_imm8) {
-		int opB = cpu->read_pc(1);
-		int res_nyb = (cpu->m_regA & 0xF) - (opB & 0xF);
-		int result = static_cast<int>(cpu->m_regA) + opB;
-		cpu->flag_setCarry(opB > cpu->m_regA);
-		cpu->m_regA = result;
-		cpu->flag_setZero((result & 0xFF) == 0);
-		cpu->flag_setSubtract(true);
-		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-		
-		cpu->pc_increment(2);
-		cpu->clock_tick(2);
-	}
 	fern_opcodefn(adc_a_imm8) {
 		int opB = cpu->read_pc(1) + cpu->flag_carry();
 		int res_nyb = (cpu->m_regA & 0xF) + (opB & 0xF);
@@ -367,6 +353,32 @@ namespace fernOpcodes {
 		cpu->flag_setSubtract(false);
 		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
 		cpu->flag_setCarry(result > 255);
+		
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(sub_a_imm8) {
+		int opB = cpu->read_pc(1);
+		int res_nyb = (cpu->m_regA & 0xF) - (opB & 0xF);
+		int result = static_cast<int>(cpu->m_regA) - opB;
+		cpu->flag_setCarry(opB > cpu->m_regA);
+		cpu->m_regA = result;
+		cpu->flag_setZero((result & 0xFF) == 0);
+		cpu->flag_setSubtract(true);
+		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+		
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(sbc_a_imm8) {
+		int opB = cpu->read_pc(1) - cpu->flag_carry();
+		int res_nyb = (cpu->m_regA & 0xF) - (opB & 0xF);
+		int result = static_cast<int>(cpu->m_regA) - opB;
+		cpu->flag_setCarry(opB > cpu->m_regA);
+		cpu->m_regA = result;
+		cpu->flag_setZero((result & 0xFF) == 0);
+		cpu->flag_setSubtract(true);
+		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
 		
 		cpu->pc_increment(2);
 		cpu->clock_tick(2);
@@ -632,6 +644,16 @@ namespace fernOpcodes {
 	fern_opcodefn(ld_sp_imm16) {
 		cpu->m_SP = cpu->read_pc(1) | (cpu->read_pc(2)<<8);
 		cpu->pc_increment(3);
+		cpu->clock_tick(3);
+	}
+
+	// TODO: correct flags
+	fern_opcodefn(ld_hl_spimm8) {
+		int offset = static_cast<int8_t>(cpu->read_pc(1));
+		cpu->hl_set(cpu->m_SP + static_cast<int8_t>(offset));
+		cpu->flag_setZero(false);
+		cpu->flag_setSubtract(false);
+		cpu->pc_increment(2);
 		cpu->clock_tick(3);
 	}
 
@@ -1203,6 +1225,31 @@ namespace fernOpcodes {
 		cpu->pc_increment(1);
 		cpu->clock_tick(1);
 	}
+	fern_opcodefn(ccf) {
+		cpu->flag_setSubtract(true);
+		cpu->flag_setHalfcarry(true);
+		cpu->flag_setCarry(!cpu->flag_carry());
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(daa) {
+		const int nyb_lo = cpu->m_regA & 0xf;
+		const int nyb_hi = cpu->m_regA >> 4;
+		if(nyb_lo > 9 || cpu->flag_halfcarry()) {
+			cpu->m_regA += 6;
+		}
+		if(nyb_hi > 9 || cpu->flag_carry()) {
+			if(0x60 + cpu->m_regA >= 256) {
+				cpu->flag_setCarry(true);
+			}
+			cpu->m_regA += 0x60;
+		}
+		cpu->flag_setZero(cpu->m_regA == 0);
+		cpu->flag_setHalfcarry(false);
+		
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
 	fern_opcodefn(di) {
 		cpu->m_regIME = false;
 		cpu->pc_increment(1);
@@ -1301,6 +1348,7 @@ namespace fern {
 		opcode_set(0xC6,CCPUInstr(INSTRFN_NAME(add_a_imm8),"add a,imm8"));
 		opcode_set(0xCE,CCPUInstr(INSTRFN_NAME(adc_a_imm8),"adc a,imm8"));
 		opcode_set(0xD6,CCPUInstr(INSTRFN_NAME(sub_a_imm8),"sub a,imm8"));
+		opcode_set(0xDE,CCPUInstr(INSTRFN_NAME(sbc_a_imm8),"sbc a,imm8"));
 		opcode_setPrefix(0x8,CCPUInstrPfx(INSTRFN_NAME(addadc),"add a,xx/adc a,xx"));
 		opcode_setPrefix(0x9,CCPUInstrPfx(INSTRFN_NAME(subsbc),"sub a,xx/sbc a,xx"));
 
@@ -1322,6 +1370,8 @@ namespace fern {
 		opcode_set(0x11,CCPUInstr(INSTRFN_NAME(ld_de_imm16),"ld de, imm16"));
 		opcode_set(0x21,CCPUInstr(INSTRFN_NAME(ld_hl_imm16),"ld hl, imm16"));
 		opcode_set(0x31,CCPUInstr(INSTRFN_NAME(ld_sp_imm16),"ld sp, imm16"));
+		
+		opcode_set(0xf8,CCPUInstr(INSTRFN_NAME(ld_hl_spimm8),"ld hl, sp+imm8"));
 
 		opcode_set(0x0A,CCPUInstr(INSTRFN_NAME(ld_a_bc),"ld a,[bc]"));
 		opcode_set(0x1A,CCPUInstr(INSTRFN_NAME(ld_a_de),"ld a,[de]"));
@@ -1395,6 +1445,8 @@ namespace fern {
 		opcode_set(0x00,CCPUInstr(INSTRFN_NAME(nop),"nop"));
 		opcode_set(0x2F,CCPUInstr(INSTRFN_NAME(cpl),"cpl"));
 		opcode_set(0x37,CCPUInstr(INSTRFN_NAME(scf),"scf"));
+		opcode_set(0x3F,CCPUInstr(INSTRFN_NAME(ccf),"ccf"));
+		opcode_set(0x27,CCPUInstr(INSTRFN_NAME(daa),"daa"));
 		opcode_set(0xF3,CCPUInstr(INSTRFN_NAME(di),"di"));
 		opcode_set(0xFB,CCPUInstr(INSTRFN_NAME(ei),"ei"));
 		opcode_set(0x76,CCPUInstr(INSTRFN_NAME(halt),"halt"));
@@ -1613,6 +1665,7 @@ namespace fern {
 				auto old_scanline = mem.m_io.m_LY;
 				int old_mode = mem.m_io.stat_getMode();
 				bool did_vblStart = false;
+				bool do_flipscreen = false;
 
 				if(m_dotclock >= 456) {
 					mem.m_io.m_LY += 1;
@@ -1674,7 +1727,7 @@ namespace fern {
 
 				if(did_vblStart) {
 					mem.m_io.m_IF |= RFlagIF::vblank;
-					SDL_Delay(16);
+					do_flipscreen = true;
 				}
 
 				// tick timers --------------------------@/
@@ -1745,7 +1798,7 @@ namespace fern {
 					}
 					emu()->renderer.draw_line(old_scanline);
 				}
-				if(frame_ended) {
+				if(do_flipscreen) {
 					emu()->renderer.present();
 				}
 			}

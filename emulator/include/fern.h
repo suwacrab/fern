@@ -372,34 +372,27 @@ namespace fern {
 			constexpr auto flag_setCarry(bool flag) -> void {
 				flag_setBit(4,flag);
 			}
-			auto flag_zero() -> bool { return (m_regF & (1<<7)) != 0; }
-			auto flag_carry() -> bool { return (m_regF & (1<<4)) != 0; }
-			auto reg_af() -> int {
-				return (m_regA<<8) | m_regF;
-			}
-			auto reg_bc() -> int {
-				return (m_regB<<8) | m_regC;
-			}
-			auto reg_de() -> int {
-				return (m_regD<<8) | m_regE;
-			}
-			auto reg_hl() -> int {
-				return (m_regH<<8) | m_regL;
-			}
+			constexpr auto flag_zero() -> bool { return (m_regF & (1<<7)) != 0; }
+			constexpr auto flag_halfcarry() -> bool { return (m_regF & (1<<5)) != 0; }
+			constexpr auto flag_carry() -> bool { return (m_regF & (1<<4)) != 0; }
+			constexpr auto reg_af() -> int { return (m_regA<<8) | m_regF; }
+			constexpr auto reg_bc() -> int { return (m_regB<<8) | m_regC; }
+			constexpr auto reg_de() -> int { return (m_regD<<8) | m_regE; }
+			constexpr auto reg_hl() -> int { return (m_regH<<8) | m_regL; }
 			auto hilo_split(int num, uint8_t& lo, uint8_t& hi) {
 				lo = num & 0xFF;
 				hi = (num>>8) & 0xFF;
 			}
-			auto bc_set(int num) -> void {
+			constexpr auto bc_set(int num) -> void {
 				hilo_split(num,m_regC,m_regB);
 			}
-			auto de_set(int num) -> void {
+			constexpr auto de_set(int num) -> void {
 				hilo_split(num,m_regE,m_regD);
 			}
-			auto hl_set(int num) -> void {
+			constexpr auto hl_set(int num) -> void {
 				hilo_split(num,m_regL,m_regH);
 			}
-			auto sp_set(int num) -> void {
+			constexpr auto sp_set(int num) -> void {
 				m_SP = num;
 			}
 
