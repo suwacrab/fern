@@ -1,5 +1,6 @@
 emulator/workdata/marioland.gb
 emulator/workdata/kirby1.gb
+emulator/workdata/kirby2.gb
 emulator/workdata/test_kensa.gb
 emulator/workdata/testsuite/*
 emulator/build/**.d

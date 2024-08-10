@@ -1534,7 +1534,7 @@ namespace fern {
 	}
 	auto CCPU::instrhistory_pushCurrent() -> void {
 		// get rom bank
-		int bank = emu()->mem.m_mapper->rom_bank();
+		int bank = emu()->mem.rombank_current();
 		int pc = m_PC;
 		std::vector<int> opcode_data = { 0xFF };
 		instrhistory_push(bank,pc,opcode_data);
@@ -1574,7 +1574,7 @@ namespace fern {
 		if(instr_history) {
 			for(int i=0; i<m_instrhistory.size(); i++) {
 				const auto hisdata = instrhistory_get(i);
-				std::printf("\thistory[-%d]: pc=$%2X:%04X\n",i,hisdata.bank,hisdata.pc);
+				std::printf("\thistory[-%d]: pc=$%02X:%04X\n",i,hisdata.bank,hisdata.pc);
 			}
 		}
 	}
@@ -1739,7 +1739,9 @@ namespace fern {
 					if(mem.m_io.m_LY > 153) {
 						mem.m_io.m_LY = 0;
 					}
-					did_vblStart = (mem.m_io.m_LY == 144);
+					//did_vblStart = (mem.m_io.m_LY == 144);
+					did_vblStart = (mem.m_io.m_LY == 0);
+					do_flipscreen = (mem.m_io.m_LY == 0);
 
 					do_drawline = true;
 					m_dotclock -= 456;
@@ -1811,7 +1813,7 @@ namespace fern {
 					m_timerctrMain -= maintimer_limit;
 					mem.m_io.m_TIMA += 1;
 					if(mem.m_io.m_TIMA == 0) {
-						mem.m_io.m_IF |= BIT(2);
+						mem.m_io.m_IF |= RFlagIF::timer;
 					}
 				}
 
@@ -1859,7 +1861,7 @@ namespace fern {
 
 				if(do_drawline) {
 					if(!mem.m_io.ppu_enabled()) {
-						std::puts("fuck off");
+						std::puts("CCPU::clock_tick(): bad drawline?");
 						std::exit(-1);
 					}
 					emu()->renderer.draw_line(old_scanline);

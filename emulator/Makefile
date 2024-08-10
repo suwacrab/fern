@@ -1,12 +1,13 @@
 # compiler
 CXX	:= clang++
 
-LIBFLAGS :=
-LIBS := -lSDL2main -lSDL2
-LDFLAGS :=
+LIBFLAGS := -static-libstdc++ -static-libgcc
+LIBS := -lmingw32
+LIBS += -lSDL2main -lSDL2
+LIBS += -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive
 
 CFLAGS := -Wall -Wshadow -Iinclude
-CFLAGS += -Og
+CFLAGS += -O3
 CFLAGS += -MD
 #CFLAGS += -m32 # 32-bit program, for the 10% that aren't on x64
 #CFLAGS += -MMD # オブジェクトファイルの依存関係を*.dに出力する
@@ -27,7 +28,7 @@ all: $(OUTPUT)
 
 # building
 $(OUTPUT): $(OBJS)
-	$(CXX) $(LIBFLAGS) $^ $(LIBS) $(LDFLAGS) -o $@
+	$(CXX) $(LIBFLAGS) $^ $(LIBS) -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CFLAGS) -c $< -o $@

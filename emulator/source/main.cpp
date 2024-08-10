@@ -38,6 +38,7 @@ int main(int argc,const char *argv[]) {
 	std::string filename_rom;
 	bool flag_verbose = false;
 	bool flag_debug = false;
+	bool flag_vsync = false;
 
 	while(arg_index < argc) {
 		auto arg1 = arg_read();
@@ -45,9 +46,12 @@ int main(int argc,const char *argv[]) {
 		if(arg1 == "--help") {
 			print_usage();
 			std::exit(0);
-		} 
+		}
 		else if(arg1 == "-g") {
 			flag_debug = true;
+		} 
+		else if(arg1 == "-vs") {
+			flag_vsync = true;
 		} 
 		else if(arg1 == "-v") {
 			//assert_exit(arg_valid(),"mapconv: error: no output file specified");
@@ -66,10 +70,12 @@ int main(int argc,const char *argv[]) {
 	}
 
 	assert_exit(!filename_rom.empty(),"error: no rom specified");
-	std::printf("verbose: %d\n",flag_verbose);
 
-	auto emu = std::make_shared<fern::CEmulator>();
-	emu->debug_set(flag_debug);
+	fern::CEmuInitFlags flags;
+	flags.debug = flag_debug;
+	flags.vsync = flag_vsync;
+
+	auto emu = std::make_shared<fern::CEmulator>(&flags);
 	emu->load_romfile(filename_rom);
 	emu->boot();
 
@@ -84,11 +90,18 @@ static void assert_exit(bool cond, const std::string& str) {
 }
 static void print_usage() {
 	std::puts(
-		"fern 0.01\n"
+		"fern 0.2\n"
 		"usage: fern <source rom> <options>\n"
-		"\t-g        debug flag\n"
+		"\t-vs       enable vsync\n"
+		"\t-g        enable debugger\n"
 		"\t-v        verbose flag\n"
-		"\t--help    Display help"
+		"\t--help    Display help\n"
+		"\tcontrols:\n"
+		"\t\tarrow keys - d-pad\n"
+		"\t\ts - A button\n"
+		"\t\ta - B button\n"
+		"\t\tv - select\n"
+		"\t\tb - start"
 	);
 }
 

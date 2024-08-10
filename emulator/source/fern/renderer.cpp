@@ -4,26 +4,40 @@
 
 namespace fern {
 	CRenderer::CRenderer() 
-	: m_screen(160,144) {
+	: m_screen(fern::SCREEN_X,144) {
+		m_timeLastFrame = 0;
 		m_window = nullptr;
+		m_vsyncEnabled = false;
 	}
 	CRenderer::~CRenderer() {
 		
 	}
 
-	auto CRenderer::window_create() -> void {
+	auto CRenderer::window_create(bool vsync) -> void {
+		m_vsyncEnabled = vsync;
 		m_window = SDL_CreateWindow("fern",
 			SDL_WINDOWPOS_UNDEFINED,
 			SDL_WINDOWPOS_UNDEFINED,
-			160,144,
+			fern::SCREEN_X,144,
 			0
 		);
 		
-		m_renderer = SDL_CreateRenderer(
-			m_window,-1,
-			SDL_RENDERER_SOFTWARE
-				| SDL_RENDERER_PRESENTVSYNC
-		);
+
+		if(!vsync_enabled()) {
+			m_renderer = SDL_CreateRenderer(
+				m_window,-1,
+			//	SDL_RENDERER_ACCELERATED
+				SDL_RENDERER_SOFTWARE
+				//	| SDL_RENDERER_PRESENTVSYNC
+			);
+		} else {
+			m_renderer = SDL_CreateRenderer(
+				m_window,-1,
+				SDL_RENDERER_ACCELERATED
+			//	SDL_RENDERER_SOFTWARE
+					| SDL_RENDERER_PRESENTVSYNC
+			);
+		}
 	}
 
 	auto CRenderer::present() -> void {
@@ -36,6 +50,11 @@ namespace fern {
 			}
 		}
 		SDL_RenderPresent(m_renderer);
+		if(!vsync_enabled()) {
+			// busy wait for next frame...
+			while(SDL_GetTicks() - m_timeLastFrame < (1000 / 60));
+			m_timeLastFrame = SDL_GetTicks();
+		}
 	}
 	auto CRenderer::draw_line(int draw_y) -> void {
 		if(draw_y < 0 || draw_y >= 144) return;
@@ -54,6 +73,7 @@ namespace fern {
 
 		auto& mem = emu()->mem;
 		const int lcdc = mem.m_io.m_LCDC;
+		std::array<int,fern::SCREEN_X> bg_linebuffer;
 		std::array<std::array<int,4>,2> obp_table;
 		std::array<int,4> bgp_table;
 
@@ -80,7 +100,7 @@ namespace fern {
 		if(lcdc & RFlagLCDC::map9C00) addr_mapbase += 0x0400;
 		const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
 
-		for(int draw_x=0; draw_x<160; draw_x++) {
+		for(int draw_x=0; draw_x<fern::SCREEN_X; draw_x++) {
 			int fetch_x = (bgscroll_x + draw_x) & 0xFF;
 			// fetch tile
 			int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
@@ -95,6 +115,7 @@ namespace fern {
 			int dot = dotA | (dotB<<1);
 			m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
 		//	m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
+			bg_linebuffer[draw_x] = dot;
 		}
 
 		// draw sprites ---------------------------------@/
@@ -112,12 +133,13 @@ namespace fern {
 			const int oamdat_y = oamdata[0] - 16;
 			const int oamdat_x = oamdata[1] - 8;
 			const int oamdat_palet = (oamdata[3] >> 4) & 1;
+			const bool oamdat_prio = (oamdata[3] >> 7) & 1;
 			const bool flipX = (oamdata[3]>>5) & 1;
 			const bool flipY = (oamdata[3]>>6) & 1;
 
 			auto& cur_paltable = obp_table.at(oamdat_palet);
 			if(oamdat_y <= -16 || oamdat_y >= 144) continue;
-			if(oamdat_x <= -8 || oamdat_x >= 160) continue;
+			if(oamdat_x <= -8 || oamdat_x >= fern::SCREEN_X) continue;
 			if(draw_y < oamdat_y) continue;
 			if((draw_y - oamdat_y) >= spr_height) continue;
 
@@ -135,13 +157,14 @@ namespace fern {
 			for(int ix=0; ix<8; ix++) {
 				int x = ix;
 				if(oamdat_x+x < 0) continue;
-				if(oamdat_x+x >= 160) continue;
+				if(oamdat_x+x >= fern::SCREEN_X) continue;
 
 				int dotA = (lineA >> (7-x)) & 1;
 				int dotB = (lineB >> (7-x)) & 1;
 				int dot = dotA | (dotB<<1);
 				if(dot == 0) continue;
 				if(flipX) x = (7-x);
+				if(oamdat_prio && (bg_linebuffer[oamdat_x+x] > 0)) continue;
 				m_screen.dot_access(oamdat_x+x,draw_y) = 
 					palet_gray.at(cur_paltable.at(dot));
 			}

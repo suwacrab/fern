@@ -34,7 +34,6 @@ namespace fern {
 		m_mapper->assign_emu(m_emu);
 	}
 
-
 	auto CMem::interrupt_match(int mask) -> bool {
 		return (m_io.m_IF & mask) && (m_io.m_IE & mask);
 	}
@@ -115,6 +114,8 @@ namespace fern {
 				// serial -------------------------------@/
 				case 0x01: return 0;
 				case 0x02: return m_io.m_SC;
+				// timer --------------------------------@/
+				case 0x04: return m_io.m_DIV;
 				// sound --------------------------------@/
 				case 0x14: return m_io.m_NR14 & (1<<6);
 				case 0x24: return m_io.m_NR50;
@@ -566,6 +567,7 @@ namespace fern {
 		if(!m_usebattery) { return; }
 		addr &= 0x1FFF;
 
+		//emu()->mem.m_sram[addr] = data;
 		error_unimpl("true SRAM write");
 	}
 	auto CMapperMBC1::write_rom(size_t addr, int data) -> void {

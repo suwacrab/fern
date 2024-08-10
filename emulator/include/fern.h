@@ -18,6 +18,9 @@ namespace fern {
 	class CEmulatorComponent;
 	class CRenderer;
 
+	constexpr int SCREEN_X = 160;
+	constexpr int SCREEN_Y = 144;
+
 	namespace RFlagLCDC {
 		enum {
 			bgon = 0x01,
@@ -116,14 +119,19 @@ namespace fern {
 			SDL_Window* m_window;
 			SDL_Renderer* m_renderer;
 			CScreen m_screen;
+			int m_timeLastFrame;
+			bool m_vsyncEnabled;
 		public:
 			CRenderer();
 			~CRenderer();
 
-			auto window_create() -> void;
+			auto window_create(bool vsync) -> void;
 
 			auto present() -> void;
 			auto draw_line(int draw_y) -> void;
+
+			constexpr auto vsync_set(bool enable) -> void { m_vsyncEnabled = enable; }
+			constexpr auto vsync_enabled() const -> bool { return m_vsyncEnabled; }
 	};
 
 	// mapper -------------------------------------------@/
@@ -318,7 +326,7 @@ namespace fern {
 			{}
 		CInstrHistoryData(int mem_bank, int pcaddr, const std::vector<int>& opdata) {
 			pc = pcaddr;
-			mem_bank = bank;
+			bank = mem_bank;
 			opcodedata = opdata;
 		}
 
@@ -438,6 +446,15 @@ namespace fern {
 	};
 
 	// emulator -----------------------------------------@/
+	struct CEmuInitFlags {
+		bool vsync;
+		bool debug;
+
+		CEmuInitFlags()
+			: vsync(false),debug(false)
+			{}
+	};
+	
 	class CEmulator {
 		private:
 			bool m_quitflag;
@@ -451,7 +468,7 @@ namespace fern {
 			CMem mem;
 			CRenderer renderer;
 
-			CEmulator();
+			CEmulator(const CEmuInitFlags* flags);
 
 			auto process_message() -> void;
 			auto button_held(int btn) -> bool;

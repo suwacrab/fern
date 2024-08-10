@@ -4,11 +4,14 @@
 #include <SDL2/SDL.h>
 
 namespace fern {
-	CEmulator::CEmulator() {
+	CEmulator::CEmulator(const CEmuInitFlags* flags) {
+		CEmuInitFlags default_flags;
+		if(!flags) flags = &default_flags;
+
 		m_quitflag = false;
 		m_cgbmode = false;
 
-		m_debugEnable = true;
+		m_debugEnable = flags->debug;
 		m_debugSkipping = false;
 		m_debugSkipAddr = 0;
 
@@ -21,7 +24,7 @@ namespace fern {
 			std::printf( "SDL could not initialize! SDL_Error: %s\n", SDL_GetError() );
 		}
 
-		renderer.window_create();
+		renderer.window_create(flags->vsync);
 	}
 
 	auto CEmulator::process_message() -> void {
@@ -77,9 +80,21 @@ namespace fern {
 			// debug process
 			if(m_debugEnable) {
 				std::string cmdname;
-				std::printf("enter command (r=run,w=where,s=step,g=run til,p=peek,q=quit): ");
+				std::printf("enter command (type h for help): ");
 				std::cin >> cmdname;
-				if(cmdname == "p") {
+				if(cmdname == "h") {
+					std::puts(
+						"\t[h]elp   - display this help\n"
+						"\t[w]here  - print what current emulator status\n"
+						"\t[r]un    - continue running normally\n"
+						"\t[s]tep   - step 1 instruction\n"
+						"\t[ss]tep  - step multiple instructions\n"
+						"\t[g]o     - run intil specified address\n"
+						"\t[p]eek   - peek (aka. read) specified address\n"
+						"\t[q]uit   - stop emulation"
+					);
+				}
+				else if(cmdname == "p") {
 					int peek_addr = 0;
 					std::printf("where to? (hex): ");
 					std::scanf("%x",&peek_addr);
@@ -155,6 +170,8 @@ namespace fern {
 			case 0: { mem.mapper_setupNone(); break; }
 			// MBC1
 			case 1: { mem.mapper_setupMBC1(false,false); break; }
+			case 3: { mem.mapper_setupMBC1(true,true); break; }
+			// unknown
 			default: {
 				std::printf("error: unknown mapper %02Xh\n",hdr_carttype);
 				std::exit(-1);
