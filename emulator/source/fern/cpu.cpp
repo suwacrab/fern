@@ -337,7 +337,33 @@ namespace fernOpcodes {
 		int res_nyb = (cpu->m_regA & 0xF) + (opB & 0xF);
 		int result = static_cast<int>(cpu->m_regA) + opB;
 		cpu->m_regA = result;
-		cpu->flag_setZero(result == 0);
+		cpu->flag_setZero((result & 0xFF) == 0);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+		cpu->flag_setCarry(result > 255);
+		
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(sub_a_imm8) {
+		int opB = cpu->read_pc(1);
+		int res_nyb = (cpu->m_regA & 0xF) - (opB & 0xF);
+		int result = static_cast<int>(cpu->m_regA) + opB;
+		cpu->flag_setCarry(opB > cpu->m_regA);
+		cpu->m_regA = result;
+		cpu->flag_setZero((result & 0xFF) == 0);
+		cpu->flag_setSubtract(true);
+		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
+		
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
+	fern_opcodefn(adc_a_imm8) {
+		int opB = cpu->read_pc(1) + cpu->flag_carry();
+		int res_nyb = (cpu->m_regA & 0xF) + (opB & 0xF);
+		int result = static_cast<int>(cpu->m_regA) + opB;
+		cpu->m_regA = result;
+		cpu->flag_setZero((result & 0xFF) == 0);
 		cpu->flag_setSubtract(false);
 		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
 		cpu->flag_setCarry(result > 255);
@@ -364,20 +390,20 @@ namespace fernOpcodes {
 		int clock_ticks = uses_hl ? 2 : 1;
 		int pc_offset = 1;
 
-		if(!opcode_mode) {
+		if(!opcode_mode) { // add
 			int res_nyb = (cpu->m_regA & 0xF) + (cur_reg() & 0xF);
 			int result = static_cast<int>(cpu->m_regA) + cur_reg();
 			cpu->m_regA = result;
-			cpu->flag_setZero(result == 0);
+			cpu->flag_setZero((result & 0xFF) == 0);
 			cpu->flag_setSubtract(false);
 			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
 			cpu->flag_setCarry(result > 255);
-		} else {
+		} else { // adc
 			int op2 = cur_reg() + cpu->flag_carry();
 			int res_nyb = (cpu->m_regA & 0xF) + (op2 & 0xF);
 			int result = static_cast<int>(cpu->m_regA) + op2;
 			cpu->m_regA = result;
-			cpu->flag_setZero(result == 0);
+			cpu->flag_setZero((result & 0xFF) == 0);
 			cpu->flag_setSubtract(false);
 			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
 			cpu->flag_setCarry(result > 255);
@@ -410,22 +436,18 @@ namespace fernOpcodes {
 			int result = static_cast<int>(cpu->m_regA) - cur_reg();
 			cpu->flag_setCarry(cur_reg() > cpu->m_regA);
 			cpu->m_regA = result;
-			cpu->flag_setZero(result == 0);
+			cpu->flag_setZero((result & 0xFF) == 0);
 			cpu->flag_setSubtract(true);
 			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
 		} else {
-			std::puts("sbc not implemented");
-			cpu->print_status();
-			std::exit(-1);
-
 			int op2 = cur_reg() + cpu->flag_carry();
-			int res_nyb = (cpu->m_regA & 0xF) + (op2 & 0xF);
-			int result = static_cast<int>(cpu->m_regA) + op2;
+			int res_nyb = (cpu->m_regA & 0xF) - (op2 & 0xF);
+			int result = static_cast<int>(cpu->m_regA) - op2;
+			cpu->flag_setCarry(op2 > cpu->m_regA);
 			cpu->m_regA = result;
-			cpu->flag_setZero(result == 0);
+			cpu->flag_setZero((result & 0xFF) == 0);
 			cpu->flag_setSubtract(true);
 			cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-			cpu->flag_setCarry(result > 255);
 		}
 
 		cpu->pc_increment(pc_offset);
@@ -1174,6 +1196,13 @@ namespace fernOpcodes {
 		cpu->pc_increment(1);
 		cpu->clock_tick(1);
 	}
+	fern_opcodefn(scf) {
+		cpu->flag_setCarry(true);
+		cpu->flag_setSubtract(true);
+		cpu->flag_setHalfcarry(true);
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
 	fern_opcodefn(di) {
 		cpu->m_regIME = false;
 		cpu->pc_increment(1);
@@ -1270,6 +1299,8 @@ namespace fern {
 		opcode_set(0x39,CCPUInstr(INSTRFN_NAME(add_hl_sp),"add hl,sp"));
 
 		opcode_set(0xC6,CCPUInstr(INSTRFN_NAME(add_a_imm8),"add a,imm8"));
+		opcode_set(0xCE,CCPUInstr(INSTRFN_NAME(adc_a_imm8),"adc a,imm8"));
+		opcode_set(0xD6,CCPUInstr(INSTRFN_NAME(sub_a_imm8),"sub a,imm8"));
 		opcode_setPrefix(0x8,CCPUInstrPfx(INSTRFN_NAME(addadc),"add a,xx/adc a,xx"));
 		opcode_setPrefix(0x9,CCPUInstrPfx(INSTRFN_NAME(subsbc),"sub a,xx/sbc a,xx"));
 
@@ -1363,6 +1394,7 @@ namespace fern {
 		// misc
 		opcode_set(0x00,CCPUInstr(INSTRFN_NAME(nop),"nop"));
 		opcode_set(0x2F,CCPUInstr(INSTRFN_NAME(cpl),"cpl"));
+		opcode_set(0x37,CCPUInstr(INSTRFN_NAME(scf),"scf"));
 		opcode_set(0xF3,CCPUInstr(INSTRFN_NAME(di),"di"));
 		opcode_set(0xFB,CCPUInstr(INSTRFN_NAME(ei),"ei"));
 		opcode_set(0x76,CCPUInstr(INSTRFN_NAME(halt),"halt"));
@@ -1633,15 +1665,15 @@ namespace fern {
 					}
 				}
 
-				if((mem.m_io.m_STAT & 0x40) && mem.m_io.stat_lycSame() && m_lycCooldown) {
+				if((mem.m_io.m_STAT & RFlagSTAT::lycint) && mem.m_io.stat_lycSame() && m_lycCooldown) {
 					if(mem.m_io.ppu_enabled()) {
-						mem.m_io.m_IF |= BIT(1);
+						mem.m_io.m_IF |= RFlagIF::stat;
 						m_lycCooldown = false;
 					}
 				}
 
 				if(did_vblStart) {
-					mem.m_io.m_IF |= BIT(0);
+					mem.m_io.m_IF |= RFlagIF::vblank;
 					SDL_Delay(16);
 				}
 

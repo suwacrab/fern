@@ -17,6 +17,23 @@ namespace fern {
 	class CEmulatorComponent;
 	class CRenderer;
 
+	namespace RFlagSTAT {
+		enum {
+			mode0int = 0x08,
+			mode1int = 0x10,
+			mode2int = 0x20,
+			lycint = 0x40	
+		};
+	}
+
+	namespace RFlagIF {
+		enum {
+			vblank = 0x01,
+			stat = 0x02,
+			timer = 0x04
+		};
+	}
+
 	namespace EmuButton {
 		enum {
 			up,

@@ -164,8 +164,8 @@ namespace fern {
 			else if(addr_hi == 0xFE) {
 				if(addr_lo < 0xA0) {
 					if(!oam_accessible()) {
-						//std::puts("attempt to write to OAM while inaccessible");
-						//emu()->cpu.print_status();
+						std::puts("attempt to write to OAM while inaccessible");
+						emu()->cpu.print_status();
 					} else {
 						m_oam[addr_lo] = data;
 					}
@@ -357,7 +357,7 @@ namespace fern {
 						emu()->cpu.m_lycCooldown = true;
 						emu()->renderer.present();
 					}
-					std::printf("LCDC write ($%02X)\n",data);
+				//	std::printf("LCDC write ($%02X)\n",data);
 					/*if(data == 0) {
 						emu()->cpu.print_status();
 						emu()->debug_set(true);
