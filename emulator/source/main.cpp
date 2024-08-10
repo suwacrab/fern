@@ -39,6 +39,7 @@ int main(int argc,const char *argv[]) {
 	// read user arguments ------------------------------@/
 	std::string filename_rom;
 	bool flag_verbose = false;
+	bool flag_debug = false;
 
 	while(arg_index < argc) {
 		auto arg1 = arg_read();

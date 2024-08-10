@@ -158,6 +158,8 @@ namespace fern {
 		int m_IF;
 		int m_IE;
 
+		uint8_t m_DIV,m_TIMA,m_TMA,m_TAC;
+
 		// 10h
 		int m_NR10,m_NR11,m_NR12,m_NR13,m_NR14;
 		int m_NR21,m_NR22,m_NR23,m_NR24;
@@ -295,6 +297,9 @@ namespace fern {
 			int m_dotclock;
 			bool m_clockWaiting;
 			std::stack<int> m_clockWaitBuffer;
+
+			int m_timerctrDiv;
+			int m_timerctrMain;
 
 			CCPU();
 

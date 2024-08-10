@@ -3,6 +3,7 @@
 #define INSTRFN_NAME(name) fernOpcodes :: op_##name
 #define fern_opcodefn(name) void op_##name (fern::CCPU* cpu,fern::CEmulator* emu)
 #define fern_opcodepfxfn(name) void op_##name (fern::CCPU* cpu,fern::CEmulator* emu, int register_id, int opcode_mode)
+#define BIT(n) (1 << (n))
 
 namespace fernOpcodes {
 	// bitwise ops
@@ -12,7 +13,16 @@ namespace fernOpcodes {
 		cpu->pc_increment(2);
 		cpu->clock_tick(2);
 	}
+	fern_opcodefn(or_a_imm8) {
+		cpu->m_regA |= cpu->read_pc(1);
+		cpu->flag_setZero(cpu->m_regA == 0);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
+		cpu->flag_setCarry(false);
 
+		cpu->pc_increment(2);
+		cpu->clock_tick(2);
+	}
 	fern_opcodefn(xor_a_imm8) {
 		cpu->m_regA ^= cpu->read_pc(1);
 		cpu->flag_setZero(cpu->m_regA == 0);
@@ -94,6 +104,36 @@ namespace fernOpcodes {
 
 		cpu->pc_increment(pc_offset);
 		cpu->clock_tick(clock_ticks);
+	}
+
+	// TODO: check rlca operation.
+	fern_opcodefn(rlca) {
+		int carry = cpu->flag_carry();
+		int hibit = cpu->m_regA >> 7;
+		cpu->m_regA <<= 1;
+		cpu->m_regA |= hibit;
+
+		cpu->flag_setZero(false);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
+		cpu->flag_setCarry(hibit);
+	
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(rla) {
+		int carry = cpu->flag_carry();
+		int hibit = cpu->m_regA >> 7;
+		cpu->m_regA <<= 1;
+		cpu->m_regA |= carry;
+
+		cpu->flag_setZero(false);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
+		cpu->flag_setCarry(hibit);
+	
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);	
 	}
 
 	// arithemetic
@@ -1101,9 +1141,14 @@ namespace fern {
 		// setup all other instructios ------------------@/
 		// bitwise
 		opcode_set(0xE6,CCPUInstr(INSTRFN_NAME(and_a_imm8),"and a,imm8"));
+		opcode_set(0xF6,CCPUInstr(INSTRFN_NAME(or_a_imm8),"or a,imm8"));
 		opcode_setPrefix(0xA,CCPUInstrPfx(INSTRFN_NAME(andxor),"and a,xx/xor a,xx"));
 		opcode_setPrefix(0xB,CCPUInstrPfx(INSTRFN_NAME(orcp),"or a,xx/cp a,xx"));
+
 		opcode_set(0xEE,CCPUInstr(INSTRFN_NAME(xor_a_imm8),"xor a,imm8"));
+		
+		opcode_set(0x07,CCPUInstr(INSTRFN_NAME(rlca),"rlca"));
+		opcode_set(0x17,CCPUInstr(INSTRFN_NAME(rla),"rla"));
 		
 		// ldh
 		opcode_set(0xE0,CCPUInstr(INSTRFN_NAME(ldh_a8_a),"ldh [a8],a"));
@@ -1267,7 +1312,12 @@ namespace fern {
 		m_dotclock = 0;
 		m_clockWaiting = false;
 		m_clockWaitBuffer = std::stack<int>();
+
 		m_lycCooldown = false;
+
+		m_timerctrDiv = 0;
+		m_timerctrMain = 0;
+
 		m_curopcode_ptr = nullptr;
 	}
 
@@ -1294,12 +1344,12 @@ namespace fern {
 		std::printf("last opcode: %s\n",m_curopcode_ptr->name.c_str());
 		std::printf("CPU: %04Xh[+%4Xh]\n",m_PC,m_SP);
 		std::printf("ROM: %02Xh\n",rombank);
-		std::printf("\tAF:  %04Xh LY:   %3d\n",reg_af(),ly);
-		std::printf("\tBC:  %04Xh LCDC: %02Xh\n",reg_bc(),mem.m_io.m_LCDC);
-		std::printf("\tDE:  %04Xh IE:   %d\n",reg_de(),mem.m_io.m_IE);
-		std::printf("\tHL:  %04Xh IF:   %d\n",reg_hl(),mem.m_io.m_IF);
-		std::printf("\tSTAT:%4Xh IME:  %d\n",mem.m_io.m_STAT,m_regIME);
-		std::printf("\tDC:  %4d\n",m_dotclock);
+		std::printf("\tAF:   $%04X LY:   %3d\n",reg_af(),ly);
+		std::printf("\tBC:   $%04X LCDC: $%02X\n",reg_bc(),mem.m_io.m_LCDC);
+		std::printf("\tDE:   $%04X IE:   %d\n",reg_de(),mem.m_io.m_IE);
+		std::printf("\tHL:   $%04X IF:   %d\n",reg_hl(),mem.m_io.m_IF);
+		std::printf("\tSTAT: $%04X IME:  %d\n",mem.m_io.m_STAT,m_regIME);
+		std::printf("\tDC:   %4d DIV:   $%02X\n",m_dotclock,mem.m_io.m_DIV);
 	}
 	
 	auto CCPU::flag_syncAnd(int opA,int opB) -> void {
@@ -1506,13 +1556,32 @@ namespace fern {
 				}
 
 				if((mem.m_io.m_STAT & 0x40) && mem.m_io.stat_lycSame() && m_lycCooldown) {
-					mem.m_io.m_IF |= 0x2;
+					mem.m_io.m_IF |= BIT(1);
 					m_lycCooldown = false;
 				}
 
 				if(did_vblStart) {
-					mem.m_io.m_IF |= 0x01;
+					mem.m_io.m_IF |= BIT(0);
 					//SDL_Delay(16);
+				}
+
+				// tick timers --------------------------@/
+				m_timerctrDiv += wait_cycles;
+				if(m_timerctrDiv >= 64) {
+					m_timerctrDiv -= 64;
+					mem.m_io.m_DIV += 1;
+				}
+				if(mem.m_io.m_TAC & BIT(2)) {
+					m_timerctrMain += wait_cycles;
+				}
+				const std::array<int,4> timer_limts = { 256,4,16,64 };
+				int maintimer_limit = timer_limts[mem.m_io.m_TAC & 0b11];
+				if(m_timerctrMain >= maintimer_limit) {
+					m_timerctrMain -= maintimer_limit;
+					mem.m_io.m_TIMA += 1;
+					if(mem.m_io.m_TIMA == 0) {
+						mem.m_io.m_IF |= BIT(2);
+					}
 				}
 
 				// deal with interrupts, if enabled. ----@/

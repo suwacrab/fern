@@ -28,7 +28,6 @@ namespace fern {
 			}
 		}
 		SDL_RenderPresent(m_renderer);
-		std::puts("frame");
 	}
 	auto CRenderer::draw_line(int draw_y) -> void {
 		if(draw_y < 0 || draw_y >= 144) return;
@@ -38,21 +37,27 @@ namespace fern {
 			fern::CColor(112,112,112),
 			fern::CColor(12,12,12)
 		};*/
-		const fern::CColor palet_gray[4] = {
+		const std::array<fern::CColor,4> palet_gray = {
 			fern::CColor(0xff,0xf6,0xd3),
 			fern::CColor(0xf9,0xa8,0x75),
 			fern::CColor(0xeb,0x6b,0x6f),
 			fern::CColor(0x7c,0x3f,0x58)
 		};
 
-		int bgp_table[4] = {};
+		std::array<std::array<int,4>,2> obp_table;
+		std::array<int,4> bgp_table;
 		auto& mem = emu()->mem;
 		const int bgp = mem.m_io.m_BGP;
 
 		// create bgp lookup table
 		auto bgp_shifter = bgp;
+		std::array<int,2> obp_shifter = { mem.m_io.m_OBP[0], mem.m_io.m_OBP[1] };
 		for(int i=0; i<4; i++) {
-			bgp_table[i] = bgp_shifter & 3;
+			obp_table[0][i] = obp_shifter.at(0) & 3;
+			obp_table[1][i] = obp_shifter.at(1) & 3;
+			bgp_table.at(i) = bgp_shifter & 3;
+			obp_shifter.at(0) >>= 2;
+			obp_shifter.at(1) >>= 2;
 			bgp_shifter >>= 2;
 		}
 
@@ -76,6 +81,57 @@ namespace fern {
 			int dot = dotA | (dotB<<1);
 		//	m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
 			m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
+		}
+
+		// draw sprites ---------------------------------@/
+		const bool spr_size2x = (mem.m_io.m_LCDC & 0x04) != 0;
+		const int spr_height = spr_size2x ? 16 : 8;
+		
+		for(int spr_idx=0; spr_idx<40; spr_idx++) {
+			const std::array<int,4> oamdata = { 
+				mem.m_oam[spr_idx*4 + 0],
+				mem.m_oam[spr_idx*4 + 1],
+				mem.m_oam[spr_idx*4 + 2],
+				mem.m_oam[spr_idx*4 + 3]
+			};
+
+			const int oamdat_y = oamdata[0] - 16;
+			const int oamdat_x = oamdata[1] - 8;
+			const int oamdat_palet = (oamdata[3] >> 4) & 1;
+			const bool flipX = (oamdata[3]>>5) & 1;
+			const bool flipY = (oamdata[3]>>6) & 1;
+
+			auto& cur_paltable = obp_table.at(oamdat_palet);
+			if(oamdat_y <= -16 || oamdat_y >= 144) continue;
+			if(oamdat_x <= -8 || oamdat_x >= 160) continue;
+			if(draw_y < oamdat_y) continue;
+			if((draw_y - oamdat_y) >= spr_height) continue;
+
+			// get relative line of the sprite to draw
+			int line_y = (draw_y - oamdat_y);
+			if(flipY) line_y = (spr_height-1) - line_y;
+
+			// get tile address
+			int tileaddr = 0x0000 + (oamdata[2] * 0x10);
+			tileaddr += line_y * 2;
+			if(spr_size2x) tileaddr &= 0xFFFE;
+			int lineA = mem.m_vram.at(tileaddr);
+			int lineB = mem.m_vram.at(tileaddr+1);
+
+			for(int ix=0; ix<8; ix++) {
+				int x = ix;
+				if(oamdat_x+x < 0) continue;
+				if(oamdat_x+x >= 160) continue;
+
+				int dotA = (lineA >> (7-x)) & 1;
+				int dotB = (lineB >> (7-x)) & 1;
+				int dot = dotA | (dotB<<1);
+				if(dot == 0) continue;
+				if(flipX) x = (7-x);
+				m_screen.dot_set(oamdat_x+x,draw_y,
+					palet_gray.at(cur_paltable.at(dot))
+				);
+			}
 		}
 	}
 

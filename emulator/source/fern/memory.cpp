@@ -112,10 +112,12 @@ namespace fern {
 				}
 				// sound --------------------------------@/
 				case 0x14: return m_io.m_NR14 & (1<<6);
+				case 0x24: return m_io.m_NR50;
 				case 0x19: return m_io.m_NR24 & (1<<6);
 				case 0x1E: return m_io.m_NR34 & (1<<6);
 				case 0x23: return m_io.m_NR44 & (1<<6);
 				// video --------------------------------@/
+				case 0x40: return m_io.m_LCDC;
 				case 0x41: return m_io.m_STAT;
 				case 0x44: return m_io.m_LY;
 				case 0x47: return m_io.m_BGP;
@@ -221,6 +223,22 @@ namespace fern {
 					else if(data & 0x20) {
 						m_io.m_joypmode = fern::JOYPMode::button;
 					}
+					break;
+				}
+				case 0x04: { // DIV
+					m_io.m_DIV = 0;
+					break;
+				}
+				case 0x05: { // TIMA
+					m_io.m_TIMA = data;
+					break;
+				}
+				case 0x06: { // TMA
+					m_io.m_TMA = data;
+					break;
+				}
+				case 0x07: { // TAC
+					m_io.m_TAC = data;
 					break;
 				}
 				case 0x0F: { // IF
@@ -477,7 +495,7 @@ namespace fern {
 	// general mapper -----------------------------------@/
 	auto CMapper::error_unimpl(const std::string& message) -> void {
 		std::printf("mapper '%s': error: unimplemented (%s)\n",
-			message.c_str()
+			name().c_str(),message.c_str()
 		);
 		std::exit(-1);
 	}
@@ -496,7 +514,6 @@ namespace fern {
 	}
 	auto CMapperNone::write_rom(size_t addr, int data) -> void {
 	}
-
 
 	// MBC1 ---------------------------------------------@/
 	CMapperMBC1::CMapperMBC1(bool use_ram, bool use_battery) {
