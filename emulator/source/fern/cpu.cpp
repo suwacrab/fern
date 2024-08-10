@@ -106,9 +106,8 @@ namespace fernOpcodes {
 		cpu->clock_tick(clock_ticks);
 	}
 
-	// TODO: check rlca operation.
+	// TODO: check rotate operation.
 	fern_opcodefn(rlca) {
-		int carry = cpu->flag_carry();
 		int hibit = cpu->m_regA >> 7;
 		cpu->m_regA <<= 1;
 		cpu->m_regA |= hibit;
@@ -135,6 +134,34 @@ namespace fernOpcodes {
 		cpu->pc_increment(1);
 		cpu->clock_tick(1);	
 	}
+	fern_opcodefn(rrca) {
+		int lobit = cpu->m_regA & 1;
+		cpu->m_regA >>= 1;
+		cpu->m_regA |= lobit << 7;
+
+		cpu->flag_setZero(false);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
+		cpu->flag_setCarry(lobit);
+	
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(rra) {
+		int carry = cpu->flag_carry();
+		int lobit = cpu->m_regA & 1;
+		cpu->m_regA >>= 1;
+		cpu->m_regA |= carry << 7;
+
+		cpu->flag_setZero(false);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
+		cpu->flag_setCarry(lobit);
+	
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+
 
 	// arithemetic
 	fern_opcodefn(inc_b) {
@@ -269,15 +296,15 @@ namespace fernOpcodes {
 		int data = emu->mem.read(cpu->reg_hl());
 		cpu->flag_syncCompareInc(data);
 		emu->mem.write(cpu->reg_hl(),data + 1);
-		cpu->pc_increment(3);
-		cpu->clock_tick(1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(3);
 	}
 	fern_opcodefn(dec_hld) {
 		int data = emu->mem.read(cpu->reg_hl());
 		cpu->flag_syncCompareDec(data);
 		emu->mem.write(cpu->reg_hl(),data - 1);
-		cpu->pc_increment(3);
-		cpu->clock_tick(1);
+		cpu->pc_increment(1);
+		cpu->clock_tick(3);
 	}
 
 	fern_opcodefn(add_hl_bc) {
@@ -969,6 +996,48 @@ namespace fernOpcodes {
 
 		// operation fetching
 		switch(oper_id) {
+			case 0x00: { // RLC/RRC
+				int result = 0;
+				bool carry = false;
+				if(oper_mode == 0) {
+					result = (cur_reg()<<1) | (cur_reg()>>7);
+					carry = cur_reg() >> 7;
+				} else {
+					result = (cur_reg()>>1) | (cur_reg()<<7);
+					carry = cur_reg()&1;
+				}
+				
+				cpu->flag_setZero(result == 0);
+				cpu->flag_setSubtract(false);
+				cpu->flag_setHalfcarry(false);
+				cpu->flag_setCarry(carry);
+				reg_write(result);
+
+				clock_ticks = uses_hl ? 4 : 2;
+				writeback_hldat = uses_hl;
+				break;
+			}
+			case 0x01: { // RL/RR
+				int result = 0;
+				bool carry = false;
+				if(oper_mode == 0) {
+					result = (cur_reg()<<1) | cpu->flag_carry();
+					carry = cur_reg() >> 7;
+				} else {
+					result = (cur_reg()>>1) | (cpu->flag_carry()<<7);
+					carry = cur_reg()&1;
+				}
+				
+				cpu->flag_setZero(result == 0);
+				cpu->flag_setSubtract(false);
+				cpu->flag_setHalfcarry(false);
+				cpu->flag_setCarry(carry);
+				reg_write(result);
+
+				clock_ticks = uses_hl ? 4 : 2;
+				writeback_hldat = uses_hl;
+				break;
+			}
 			case 0x02: { // SLA/SRA
 				int result = 0;
 				bool carry = false;
@@ -1049,7 +1118,7 @@ namespace fernOpcodes {
 			}
 
 			default: {
-				std::printf("unimplemented prefix op (%02Xh)\n",prefix_operand);
+				std::printf("unimplemented prefix op (%02Xh)\n",oper_id);
 				cpu->print_status();
 				std::exit(-1);
 			}
@@ -1149,6 +1218,8 @@ namespace fern {
 		
 		opcode_set(0x07,CCPUInstr(INSTRFN_NAME(rlca),"rlca"));
 		opcode_set(0x17,CCPUInstr(INSTRFN_NAME(rla),"rla"));
+		opcode_set(0x0F,CCPUInstr(INSTRFN_NAME(rrca),"rrca"));
+		opcode_set(0x1F,CCPUInstr(INSTRFN_NAME(rra),"rra"));
 		
 		// ldh
 		opcode_set(0xE0,CCPUInstr(INSTRFN_NAME(ldh_a8_a),"ldh [a8],a"));
@@ -1349,7 +1420,7 @@ namespace fern {
 		std::printf("\tDE:   $%04X IE:   %d\n",reg_de(),mem.m_io.m_IE);
 		std::printf("\tHL:   $%04X IF:   %d\n",reg_hl(),mem.m_io.m_IF);
 		std::printf("\tSTAT: $%04X IME:  %d\n",mem.m_io.m_STAT,m_regIME);
-		std::printf("\tDC:   %4d DIV:   $%02X\n",m_dotclock,mem.m_io.m_DIV);
+		std::printf("\tDC:    %4d DIV:   $%02X\n",m_dotclock,mem.m_io.m_DIV);
 	}
 	
 	auto CCPU::flag_syncAnd(int opA,int opB) -> void {
@@ -1591,34 +1662,37 @@ namespace fern {
 					}
 
 					// vblank interrupt
-					if(mem.interrupt_match(0x1)) {
-						mem.interrupt_clear(0x1);
+					if(mem.interrupt_match(BIT(0))) {
+						mem.interrupt_clear(BIT(0));
 						m_regIME = false;
 						stack_push16(m_PC);
 						m_PC = 0x40;
 						clock_tick(5);
 					}
 					// LCD interrupt
-					else if(mem.interrupt_match(0x2)) {
-						mem.interrupt_clear(0x2);
+					else if(mem.interrupt_match(BIT(1))) {
+						mem.interrupt_clear(BIT(1));
 						m_regIME = false;
 						stack_push16(m_PC);
 						m_PC = 0x48;
 						clock_tick(5);
 					}
 					// timer interrupt
-					else if(mem.interrupt_match(0x04)) {
-						std::puts("unimplemented interrupt");
-						std::exit(-1);
+					else if(mem.interrupt_match(BIT(2))) {
+						mem.interrupt_clear(BIT(2));
+						m_regIME = false;
+						stack_push16(m_PC);
+						m_PC = 0x50;
+						clock_tick(5);
 					}
 					// serial interrupt
 					else if(mem.interrupt_match(0x08)) {
-						std::puts("unimplemented interrupt");
+						std::puts("unimplemented interrupt (serial)");
 						std::exit(-1);
 					}
 					// joypad interrupt
 					else if(mem.interrupt_match(0x10)) {
-						std::puts("unimplemented interrupt");
+						std::puts("unimplemented interrupt (joypad)");
 						std::exit(-1);
 					}
 				}

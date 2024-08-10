@@ -20,6 +20,7 @@ namespace fern {
 		m_io = {};
 		m_io.m_LCDC = 0x91;
 		m_io.m_IF = 0x01;
+		m_io.m_DIV = 0xAB;
 	}
 
 	auto CMem::mapper_setupNone() -> void {
@@ -107,7 +108,7 @@ namespace fern {
 						if(emu()->button_held(EmuButton::up)) paddata ^= 0x4;
 						if(emu()->button_held(EmuButton::down)) paddata ^= 0x8;
 					}
-					std::printf("pad: %1Xh (mode: %d)\n",paddata,m_io.m_joypmode);
+					//std::printf("pad: %1Xh (mode: %d)\n",paddata,m_io.m_joypmode);
 					return paddata;
 				}
 				// sound --------------------------------@/
@@ -383,6 +384,7 @@ namespace fern {
 					int out_addr = 0xFE00;
 					for(int i=0; i<0xA0; i++) {
 						write(out_addr + i,read(src_addr + i));
+						emu()->cpu.clock_tick(4);
 					}
 					break;
 				}

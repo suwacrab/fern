@@ -45,4 +45,14 @@ todo: ei
 042c: fine.
 
 kensa:
-	5705: wram clear end
+	02d3: end of init, i think
+	02d7: first EI?
+	02db: fine.
+	0353: fine.
+	13d1: fine.
+	075e: fine.
+	0770: fine. (graph loaded by this point?)
+	0787: fine.
+	02de: good.
+	02e1: wrong!
+	5705: wram clear end (fine)
