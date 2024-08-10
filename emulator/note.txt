@@ -38,6 +38,7 @@ LoadNextColumn.clearLoop (21bc): fine.
 	.notHiddenBlock: good
 	.nextRow: good
 error til now was due to jr not incrementing pc. should be fine?
+9d: where the problems arise (running twice is different?)
 
 042c: first EI.
 todo: ei

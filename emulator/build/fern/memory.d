@@ -314,4 +314,5 @@ build/fern/memory.o: source/fern/memory.cpp include/fern.h \
   D:/EXTKM/COMPA/msys64/mingw64/include/SDL2/SDL_timer.h \
   D:/EXTKM/COMPA/msys64/mingw64/include/SDL2/SDL_version.h \
   D:/EXTKM/COMPA/msys64/mingw64/include/SDL2/SDL_locale.h \
-  D:/EXTKM/COMPA/msys64/mingw64/include/SDL2/SDL_misc.h
+  D:/EXTKM/COMPA/msys64/mingw64/include/SDL2/SDL_misc.h \
+  include/fern_common.h

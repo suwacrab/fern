@@ -1,4 +1,5 @@
 #include <fern.h>
+#include <fern_common.h>
 
 static void warn_cgb_reg(const std::string& name, int data) {
 	std::printf("warning: CGB register written to (%02Xh) (%s)\n",
@@ -217,12 +218,12 @@ namespace fern {
 					}
 					
 					// directionals
-					if(data & 0x10) {
-						m_io.m_joypmode = fern::JOYPMode::direction;
+					if(data & BIT(4)) {
+						m_io.m_joypmode = fern::JOYPMode::button;
 					} 
 					// buttons
-					else if(data & 0x20) {
-						m_io.m_joypmode = fern::JOYPMode::button;
+					else if(data & BIT(5)) {
+						m_io.m_joypmode = fern::JOYPMode::direction;
 					}
 					break;
 				}
@@ -356,6 +357,11 @@ namespace fern {
 						emu()->cpu.m_lycCooldown = true;
 						emu()->renderer.present();
 					}
+					std::printf("LCDC write ($%02X)\n",data);
+					/*if(data == 0) {
+						emu()->cpu.print_status();
+						emu()->debug_set(true);
+					}*/	
 					m_io.m_LCDC = data;
 					break;
 				}

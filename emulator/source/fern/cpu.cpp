@@ -1,9 +1,9 @@
 #include <fern.h>
+#include <fern_common.h>
 
 #define INSTRFN_NAME(name) fernOpcodes :: op_##name
 #define fern_opcodefn(name) void op_##name (fern::CCPU* cpu,fern::CEmulator* emu)
 #define fern_opcodepfxfn(name) void op_##name (fern::CCPU* cpu,fern::CEmulator* emu, int register_id, int opcode_mode)
-#define BIT(n) (1 << (n))
 
 namespace fernOpcodes {
 	// bitwise ops
@@ -1072,8 +1072,15 @@ namespace fernOpcodes {
 					clock_ticks = uses_hl ? 4 : 2;
 					writeback_hldat = uses_hl;
 				} else {
-					std::puts("unimplemented: SRL");
-					std::exit(-1);
+					int lo = cur_reg() & 1;
+					reg_write(cur_reg() >> 1);
+					cpu->flag_setZero(true);
+					cpu->flag_setSubtract(false);
+					cpu->flag_setHalfcarry(false);
+					cpu->flag_setCarry(lo);
+					
+					clock_ticks = uses_hl ? 4 : 2;
+					writeback_hldat = uses_hl;
 				}
 				break;
 			}
@@ -1627,13 +1634,15 @@ namespace fern {
 				}
 
 				if((mem.m_io.m_STAT & 0x40) && mem.m_io.stat_lycSame() && m_lycCooldown) {
-					mem.m_io.m_IF |= BIT(1);
-					m_lycCooldown = false;
+					if(mem.m_io.ppu_enabled()) {
+						mem.m_io.m_IF |= BIT(1);
+						m_lycCooldown = false;
+					}
 				}
 
 				if(did_vblStart) {
 					mem.m_io.m_IF |= BIT(0);
-					//SDL_Delay(16);
+					SDL_Delay(16);
 				}
 
 				// tick timers --------------------------@/

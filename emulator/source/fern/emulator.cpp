@@ -50,8 +50,8 @@ namespace fern {
 		m_joypad_state.at(EmuButton::down) = keystate[SDL_SCANCODE_DOWN];
 		m_joypad_state.at(EmuButton::left) = keystate[SDL_SCANCODE_LEFT];
 		m_joypad_state.at(EmuButton::right) = keystate[SDL_SCANCODE_RIGHT];
-		m_joypad_state.at(EmuButton::a) = keystate[SDL_SCANCODE_A];
-		m_joypad_state.at(EmuButton::b) = keystate[SDL_SCANCODE_S];
+		m_joypad_state.at(EmuButton::b) = keystate[SDL_SCANCODE_A];
+		m_joypad_state.at(EmuButton::a) = keystate[SDL_SCANCODE_S];
 		m_joypad_state.at(EmuButton::start) = keystate[SDL_SCANCODE_B];
 		m_joypad_state.at(EmuButton::select) = keystate[SDL_SCANCODE_V];
 	}
