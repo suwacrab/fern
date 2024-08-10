@@ -112,6 +112,9 @@ namespace fern {
 					//std::printf("pad: %1Xh (mode: %d)\n",paddata,m_io.m_joypmode);
 					return paddata;
 				}
+				// serial -------------------------------@/
+				case 0x01: return 0;
+				case 0x02: return m_io.m_SC;
 				// sound --------------------------------@/
 				case 0x14: return m_io.m_NR14 & (1<<6);
 				case 0x24: return m_io.m_NR50;
@@ -225,6 +228,15 @@ namespace fern {
 					else if(data & BIT(5)) {
 						m_io.m_joypmode = fern::JOYPMode::direction;
 					}
+					break;
+				}
+				case 0x01: { // SB
+					std::printf("serial write ($%02X)\n",data);
+					m_io.m_SB = data;
+					break;
+				}
+				case 0x02: { // SC
+					m_io.m_SC = data;
 					break;
 				}
 				case 0x04: { // DIV
@@ -387,7 +399,6 @@ namespace fern {
 					// output addr: $FE00
 					// length: $A0
 					int src_addr = (data<<8);
-					int out_addr = 0xFE00;
 					for(int i=0; i<0xA0; i++) {
 						m_oam[i] = read(src_addr + i);
 						emu()->cpu.clock_tick(1);

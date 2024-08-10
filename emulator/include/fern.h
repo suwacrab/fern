@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 
+#include <deque>
 #include <vector>
 #include <stack>
 #include <string>
@@ -16,6 +17,19 @@ namespace fern {
 	class CEmulator;
 	class CEmulatorComponent;
 	class CRenderer;
+
+	namespace RFlagLCDC {
+		enum {
+			bgon = 0x01,
+			objon = 0x02,
+			obj16 = 0x04,
+			map9C00 = 0x08,
+			chr8000 = 0x10,
+			winon = 0x20,
+			win9800 = 0x40,
+			lcdon = 0x80
+		};
+	}
 
 	namespace RFlagSTAT {
 		enum {
@@ -174,6 +188,7 @@ namespace fern {
 		
 		int m_IF;
 		int m_IE;
+		int m_SB,m_SC;
 
 		uint8_t m_DIV,m_TIMA,m_TMA,m_TAC;
 
@@ -292,6 +307,23 @@ namespace fern {
 			name = instr_name;
 		}
 	};
+
+	struct CInstrHistoryData {
+		int pc;
+		int bank;
+		std::vector<int> opcodedata;
+
+		CInstrHistoryData() 
+			: pc(0),bank(0),opcodedata({0})
+			{}
+		CInstrHistoryData(int mem_bank, int pcaddr, const std::vector<int>& opdata) {
+			pc = pcaddr;
+			mem_bank = bank;
+			opcodedata = opdata;
+		}
+
+		constexpr int opcode_num() const { return opcodedata.at(0); }
+	};
 	
 	class CCPU : public CEmulatorComponent {
 		private:
@@ -318,10 +350,16 @@ namespace fern {
 			int m_timerctrDiv;
 			int m_timerctrMain;
 
+			std::deque<CInstrHistoryData> m_instrhistory;
+
 			CCPU();
 
 			constexpr auto pc_set(std::size_t addr) { m_PC = addr; }
 			constexpr auto pc_increment(std::size_t offset) { m_PC += offset; }
+
+			auto instrhistory_get(int index) -> CInstrHistoryData;
+			auto instrhistory_push(int bank, int pc, const std::vector<int>& opcodedata) -> void;
+			auto instrhistory_pushCurrent() -> void;
 
 			auto flag_syncAnd(int opA,int opB) -> void;
 			auto flag_syncAdd16(uint32_t opA,uint32_t opB) -> void;
@@ -351,7 +389,7 @@ namespace fern {
 			auto opcode_set(std::size_t index,CCPUInstr instr) -> void;
 			auto opcode_setPrefix(std::size_t index,CCPUInstrPfx instr) -> void;
 			
-			auto print_status() -> void;
+			auto print_status(bool instr_history = false) -> void;
 
 			auto reset() -> void;
 			auto step() -> void;
@@ -372,9 +410,10 @@ namespace fern {
 			constexpr auto flag_setCarry(bool flag) -> void {
 				flag_setBit(4,flag);
 			}
-			constexpr auto flag_zero() -> bool { return (m_regF & (1<<7)) != 0; }
-			constexpr auto flag_halfcarry() -> bool { return (m_regF & (1<<5)) != 0; }
-			constexpr auto flag_carry() -> bool { return (m_regF & (1<<4)) != 0; }
+			constexpr auto flag_zero() -> bool { return (m_regF>>7)&1; }
+			constexpr auto flag_subtract() -> bool { return (m_regF>>6)&1; }
+			constexpr auto flag_halfcarry() -> bool { return (m_regF>>5)&1; }
+			constexpr auto flag_carry() -> bool { return (m_regF>>4)&1; }
 			constexpr auto reg_af() -> int { return (m_regA<<8) | m_regF; }
 			constexpr auto reg_bc() -> int { return (m_regB<<8) | m_regC; }
 			constexpr auto reg_de() -> int { return (m_regD<<8) | m_regE; }

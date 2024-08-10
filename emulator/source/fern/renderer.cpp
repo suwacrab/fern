@@ -1,4 +1,5 @@
 #include <fern.h>
+#include <fern_common.h>
 #include <SDL2/SDL.h>
 
 namespace fern {
@@ -51,13 +52,13 @@ namespace fern {
 			fern::CColor(0x7c,0x3f,0x58)
 		};
 
+		auto& mem = emu()->mem;
+		const int lcdc = mem.m_io.m_LCDC;
 		std::array<std::array<int,4>,2> obp_table;
 		std::array<int,4> bgp_table;
-		auto& mem = emu()->mem;
-		const int bgp = mem.m_io.m_BGP;
 
 		// create bgp lookup table
-		auto bgp_shifter = bgp;
+		int bgp_shifter = mem.m_io.m_BGP;
 		std::array<int,2> obp_shifter = { mem.m_io.m_OBP[0], mem.m_io.m_OBP[1] };
 		for(int i=0; i<4; i++) {
 			obp_table[0][i] = obp_shifter.at(0) & 3;
@@ -69,12 +70,16 @@ namespace fern {
 		}
 
 		// render to screen
-		const size_t addr_chrbase = 0x1800;
-		const size_t addr_mapbase = 0x1800;
-		const size_t addr_mapline = addr_mapbase + ((draw_y/8) * 0x20);
-
 		const int bgscroll_x = mem.m_io.m_SCX;
 		const int bgscroll_y = mem.m_io.m_SCY;
+		
+		const int fetch_y = (bgscroll_y + draw_y) & 0xFF;
+		size_t addr_chrbase = 0x1800;
+		size_t addr_mapbase = 0x1800;
+		if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
+		if(lcdc & RFlagLCDC::map9C00) addr_mapbase += 0x0400;
+		const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
+
 		for(int draw_x=0; draw_x<160; draw_x++) {
 			int fetch_x = (bgscroll_x + draw_x) & 0xFF;
 			// fetch tile
@@ -88,8 +93,8 @@ namespace fern {
 			int dotA = (lineA >> (7-(fetch_x&7))) & 1;
 			int dotB = (lineB >> (7-(fetch_x&7))) & 1;
 			int dot = dotA | (dotB<<1);
-		//	m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
-			m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
+			m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
+		//	m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
 		}
 
 		// draw sprites ---------------------------------@/

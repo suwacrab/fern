@@ -89,22 +89,20 @@ namespace fern {
 					quit();
 				}
 				else if(cmdname == "w") {
-					cpu.print_status();
+					cpu.print_status(true);
 				}
 				else if(cmdname == "r") {
 					m_debugEnable = false;
 				}
-				else if(cmdname == "s") {
-					cpu.step();
-					cpu.print_status();
-				}
-				else if(cmdname == "ss") {
-					int to_step = 0;
-					std::printf("how many lines? (int): ");
-					std::scanf("%d",&to_step);
+				else if(cmdname == "s" || cmdname == "ss") {
+					int to_step = 1;
+					if(cmdname == "ss") {
+						std::printf("how many lines? (int): ");
+						std::scanf("%d",&to_step);
+					}
 					for(int i=0; i<to_step; i++) cpu.step();
 
-					cpu.print_status();
+					cpu.print_status(true);
 				}
 				else if(cmdname == "g") {
 					int to_addr = 0;

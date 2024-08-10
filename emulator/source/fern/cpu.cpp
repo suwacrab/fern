@@ -371,7 +371,7 @@ namespace fernOpcodes {
 		cpu->clock_tick(2);
 	}
 	fern_opcodefn(sbc_a_imm8) {
-		int opB = cpu->read_pc(1) - cpu->flag_carry();
+		int opB = cpu->read_pc(1) + cpu->flag_carry();
 		int res_nyb = (cpu->m_regA & 0xF) - (opB & 0xF);
 		int result = static_cast<int>(cpu->m_regA) - opB;
 		cpu->flag_setCarry(opB > cpu->m_regA);
@@ -528,6 +528,10 @@ namespace fernOpcodes {
 			cpu->m_regC = cur_reg();
 		}
 
+		/*if(register_id == 0) {
+			std::puts("debug break!");
+			emu->debug_set(true);
+		}*/
 		cpu->pc_increment(pc_offset);
 		cpu->clock_tick(clock_ticks);
 	}
@@ -648,13 +652,29 @@ namespace fernOpcodes {
 	}
 
 	// TODO: correct flags
+	fern_opcodefn(ld_a16_sp) {
+		int addr = cpu->read_pc16(1);
+		emu->mem.write(addr+0,cpu->m_SP & 0xFF);
+		emu->mem.write(addr+1,(cpu->m_SP>>8) & 0xFF);
+		cpu->pc_increment(3);
+		cpu->clock_tick(5);
+	}
 	fern_opcodefn(ld_hl_spimm8) {
 		int offset = static_cast<int8_t>(cpu->read_pc(1));
-		cpu->hl_set(cpu->m_SP + static_cast<int8_t>(offset));
+		int result = (cpu->m_SP + offset);
+		int lo = (cpu->m_SP>>8)&1;
+		cpu->hl_set(result);
 		cpu->flag_setZero(false);
 		cpu->flag_setSubtract(false);
+		cpu->flag_setCarry(lo != ((result>>8)&1));
 		cpu->pc_increment(2);
 		cpu->clock_tick(3);
+	}
+
+	fern_opcodefn(ld_sp_hl) {
+		cpu->m_SP = cpu->reg_hl();
+		cpu->pc_increment(1);
+		cpu->clock_tick(2);
 	}
 
 	fern_opcodefn(ld_a_bc) {
@@ -1108,7 +1128,7 @@ namespace fernOpcodes {
 					int lo = cur_reg() & 0xF;
 					int hi = cur_reg() >> 4;
 					reg_write((lo<<4) | hi);
-					cpu->flag_setZero(true);
+					cpu->flag_setZero(cur_reg() == 0);
 					cpu->flag_setSubtract(false);
 					cpu->flag_setHalfcarry(false);
 					cpu->flag_setCarry(false);
@@ -1118,7 +1138,7 @@ namespace fernOpcodes {
 				} else {
 					int lo = cur_reg() & 1;
 					reg_write(cur_reg() >> 1);
-					cpu->flag_setZero(true);
+					cpu->flag_setZero(cur_reg() == 0);
 					cpu->flag_setSubtract(false);
 					cpu->flag_setHalfcarry(false);
 					cpu->flag_setCarry(lo);
@@ -1135,7 +1155,7 @@ namespace fernOpcodes {
 			case 0x7: {
 				int bit_idx = (prefix_operand - 0x40) >> 3;
 				bool flag = (cur_reg() >> bit_idx)&1;
-				cpu->flag_setZero(!flag);
+				cpu->flag_setZero(flag == 0);
 				cpu->flag_setSubtract(false);
 				cpu->flag_setHalfcarry(true);
 
@@ -1233,17 +1253,28 @@ namespace fernOpcodes {
 		cpu->clock_tick(1);
 	}
 	fern_opcodefn(daa) {
-		const int nyb_lo = cpu->m_regA & 0xf;
-		const int nyb_hi = cpu->m_regA >> 4;
-		if(nyb_lo > 9 || cpu->flag_halfcarry()) {
-			cpu->m_regA += 6;
+		int orig_reg = cpu->m_regA;
+		const int nyb_lo = orig_reg & 0xf;
+
+		// set correction
+		int correction = cpu->flag_carry() ? 0x60 : 0;
+		if(cpu->flag_halfcarry() || (!cpu->flag_subtract() && (nyb_lo > 9)) )
+			correction |= 0x06;
+		if(cpu->flag_carry() || (!cpu->flag_subtract() && (orig_reg > 0x99)))
+			correction |= 0x60;
+
+		// subtract if needed
+		if(cpu->flag_subtract()) {
+			orig_reg = static_cast<uint8_t>(orig_reg - correction);
+		} else {
+			orig_reg = static_cast<uint8_t>(orig_reg + correction);
 		}
-		if(nyb_hi > 9 || cpu->flag_carry()) {
-			if(0x60 + cpu->m_regA >= 256) {
-				cpu->flag_setCarry(true);
-			}
-			cpu->m_regA += 0x60;
+
+		if( (correction<<2) & 0x100 ) {
+			cpu->flag_setCarry(true);
 		}
+
+		cpu->m_regA = orig_reg;
 		cpu->flag_setZero(cpu->m_regA == 0);
 		cpu->flag_setHalfcarry(false);
 		
@@ -1371,7 +1402,9 @@ namespace fern {
 		opcode_set(0x21,CCPUInstr(INSTRFN_NAME(ld_hl_imm16),"ld hl, imm16"));
 		opcode_set(0x31,CCPUInstr(INSTRFN_NAME(ld_sp_imm16),"ld sp, imm16"));
 		
+		opcode_set(0x08,CCPUInstr(INSTRFN_NAME(ld_a16_sp),"ld [a16], sp"));
 		opcode_set(0xf8,CCPUInstr(INSTRFN_NAME(ld_hl_spimm8),"ld hl, sp+imm8"));
+		opcode_set(0xf9,CCPUInstr(INSTRFN_NAME(ld_sp_hl),"ld sp, hl"));
 
 		opcode_set(0x0A,CCPUInstr(INSTRFN_NAME(ld_a_bc),"ld a,[bc]"));
 		opcode_set(0x1A,CCPUInstr(INSTRFN_NAME(ld_a_de),"ld a,[de]"));
@@ -1481,8 +1514,33 @@ namespace fern {
 		m_timerctrMain = 0;
 
 		m_curopcode_ptr = nullptr;
+
+		// setup instruction history
+		m_instrhistory = std::deque<CInstrHistoryData>();
+		std::vector<int> opcodedata = { 0xFF };
+		for(int i=0; i<4; i++) {
+			m_instrhistory.push_back(CInstrHistoryData());
+		}
 	}
 
+	// instruction history ------------------------------@/
+	auto CCPU::instrhistory_get(int index) -> CInstrHistoryData {
+		return m_instrhistory.at(m_instrhistory.size()-1-index);
+	}
+	auto CCPU::instrhistory_push(int bank, int pc, const std::vector<int>& opcodedata) -> void {
+		auto instr = fern::CInstrHistoryData(bank,pc,opcodedata);
+		m_instrhistory.push_back(instr);
+		m_instrhistory.pop_front();
+	}
+	auto CCPU::instrhistory_pushCurrent() -> void {
+		// get rom bank
+		int bank = emu()->mem.m_mapper->rom_bank();
+		int pc = m_PC;
+		std::vector<int> opcode_data = { 0xFF };
+		instrhistory_push(bank,pc,opcode_data);
+	}
+
+	// opcode setting -----------------------------------@/
 	auto CCPU::opcode_clear() -> void {
 		for(int i=0; i<16; i++) {
 			opcode_setPrefix(i,CCPUInstrPfx(INSTRFN_NAME(unimplemented_pfx),"unimplemented"));
@@ -1498,7 +1556,7 @@ namespace fern {
 		m_opcodetable_pfx.at(index) = instr;
 	}
 
-	auto CCPU::print_status() -> void {
+	auto CCPU::print_status(bool instr_history) -> void {
 		if(!m_curopcode_ptr) return;
 		auto &mem = emu()->mem;
 		const auto rombank = mem.rombank_current();
@@ -1512,6 +1570,13 @@ namespace fern {
 		std::printf("\tHL:   $%04X IF:   %d\n",reg_hl(),mem.m_io.m_IF);
 		std::printf("\tSTAT: $%04X IME:  %d\n",mem.m_io.m_STAT,m_regIME);
 		std::printf("\tDC:    %4d DIV:   $%02X\n",m_dotclock,mem.m_io.m_DIV);
+
+		if(instr_history) {
+			for(int i=0; i<m_instrhistory.size(); i++) {
+				const auto hisdata = instrhistory_get(i);
+				std::printf("\thistory[-%d]: pc=$%2X:%04X\n",i,hisdata.bank,hisdata.pc);
+			}
+		}
 	}
 	
 	auto CCPU::flag_syncAnd(int opA,int opB) -> void {
@@ -1618,6 +1683,9 @@ namespace fern {
 		int opcode_pfx = opcode_num >> 4;
 		int opcode_mode = (opcode_num>>3) & 1;
 
+		// push opcode
+		instrhistory_pushCurrent();
+
 		// regular opcode
 		if(m_opcodetable[opcode_num].fn != INSTRFN_NAME(unimplemented)) {
 			auto &opcode = m_opcodetable[opcode_num];
@@ -1660,7 +1728,6 @@ namespace fern {
 				// mode 3: OAM draw (no OAM/VRAM)
 				// mode 1: vblank (all accessible)
 				// mode 0: hblank (all accessible)
-				bool frame_ended = false;
 				bool do_drawline = false;
 				auto old_scanline = mem.m_io.m_LY;
 				int old_mode = mem.m_io.stat_getMode();
@@ -1671,7 +1738,6 @@ namespace fern {
 					mem.m_io.m_LY += 1;
 					if(mem.m_io.m_LY > 153) {
 						mem.m_io.m_LY = 0;
-						frame_ended = true;
 					}
 					did_vblStart = (mem.m_io.m_LY == 144);
 
