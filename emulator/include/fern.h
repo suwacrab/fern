@@ -395,6 +395,7 @@ namespace fern {
 
 			auto opcode_clear() -> void;
 			auto opcode_set(std::size_t index,CCPUInstr instr) -> void;
+			auto opcode_setRaw(std::size_t index,CCPUInstr instr) -> void;
 			auto opcode_setPrefix(std::size_t index,CCPUInstrPfx instr) -> void;
 			
 			auto print_status(bool instr_history = false) -> void;

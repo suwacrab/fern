@@ -294,14 +294,14 @@ namespace fernOpcodes {
 	fern_opcodefn(inc_hld) {
 		int data = emu->mem.read(cpu->reg_hl());
 		cpu->flag_syncCompareInc(data);
-		emu->mem.write(cpu->reg_hl(),data + 1);
+		emu->mem.write(cpu->reg_hl(),(data + 1) & 0xFF);
 		cpu->pc_increment(1);
 		cpu->clock_tick(3);
 	}
 	fern_opcodefn(dec_hld) {
 		int data = emu->mem.read(cpu->reg_hl());
 		cpu->flag_syncCompareDec(data);
-		emu->mem.write(cpu->reg_hl(),data - 1);
+		emu->mem.write(cpu->reg_hl(),(data - 1) & 0xFF);
 		cpu->pc_increment(1);
 		cpu->clock_tick(3);
 	}
@@ -339,7 +339,7 @@ namespace fernOpcodes {
 		cpu->flag_setZero((result & 0xFF) == 0);
 		cpu->flag_setSubtract(false);
 		cpu->flag_setHalfcarry((res_nyb & 0x10) == 0x10);
-		cpu->flag_setCarry(result > 255);
+		cpu->flag_setCarry((result & 0x100) != 0);
 		
 		cpu->pc_increment(2);
 		cpu->clock_tick(2);
@@ -662,13 +662,22 @@ namespace fernOpcodes {
 	fern_opcodefn(ld_hl_spimm8) {
 		int offset = static_cast<int8_t>(cpu->read_pc(1));
 		int result = (cpu->m_SP + offset);
+		int losp = cpu->m_SP & 0xFF;
 		int lo = (cpu->m_SP>>8)&1;
-		cpu->hl_set(result);
+	//	int res_nyb = (cpu->m_SP & 0xF) + (opB & 0xF);
+		
+		cpu->hl_set(result & 0xFFFF);
 		cpu->flag_setZero(false);
 		cpu->flag_setSubtract(false);
-		cpu->flag_setCarry(lo != ((result>>8)&1));
+	//	cpu->flag_setHalfcarry(true);
+	//	cpu->flag_setCarry(lo != ((result>>8)&1));
+	   	if(((losp + offset) & 0x100) != 0) {
+			cpu->flag_setCarry(true);
+		}
 		cpu->pc_increment(2);
 		cpu->clock_tick(3);
+		printf("sp?");
+		cpu->print_status();
 	}
 
 	fern_opcodefn(ld_sp_hl) {
@@ -1109,7 +1118,7 @@ namespace fernOpcodes {
 					result = cur_reg() << 1;
 					carry = cur_reg() >> 7;
 				} else {
-					result = (cur_reg()>>7) | (cur_reg()&0x80);
+					result = (cur_reg()>>1) | (cur_reg()&0x80);
 					carry = cur_reg()&1;
 				}
 				
@@ -1239,15 +1248,15 @@ namespace fernOpcodes {
 		cpu->clock_tick(1);
 	}
 	fern_opcodefn(scf) {
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
 		cpu->flag_setCarry(true);
-		cpu->flag_setSubtract(true);
-		cpu->flag_setHalfcarry(true);
 		cpu->pc_increment(1);
 		cpu->clock_tick(1);
 	}
 	fern_opcodefn(ccf) {
-		cpu->flag_setSubtract(true);
-		cpu->flag_setHalfcarry(true);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setHalfcarry(false);
 		cpu->flag_setCarry(!cpu->flag_carry());
 		cpu->pc_increment(1);
 		cpu->clock_tick(1);
@@ -1318,7 +1327,7 @@ namespace fern {
 			0xF4,0xFC,0xFD
 		};
 		for(auto instr : bad_instrs) {
-			opcode_set(instr,CCPUInstr(INSTRFN_NAME(invalid),"invalid"));
+			opcode_setRaw(instr,CCPUInstr(INSTRFN_NAME(invalid),"invalid"));
 		}
 
 		// setup all other instructios ------------------@/
@@ -1546,11 +1555,26 @@ namespace fern {
 			opcode_setPrefix(i,CCPUInstrPfx(INSTRFN_NAME(unimplemented_pfx),"unimplemented"));
 		}
 		for(int i=0; i<256; i++) {
-			opcode_set(i,CCPUInstr(INSTRFN_NAME(unimplemented),"unimplemented"));
+			opcode_setRaw(i,CCPUInstr(INSTRFN_NAME(unimplemented),"unimplemented"));
 		}
 	}
-	auto CCPU::opcode_set(std::size_t index,CCPUInstr instr) -> void {
+	auto CCPU::opcode_setRaw(std::size_t index,CCPUInstr instr) -> void {
 		m_opcodetable.at(index) = instr;
+	}
+	auto CCPU::opcode_set(std::size_t index,CCPUInstr instr) -> void {
+		auto& opcode = m_opcodetable.at(index);
+		if(opcode.fn != INSTRFN_NAME(unimplemented)) {
+			std::printf("error: duplicate opcode\n");
+			std::exit(-1);
+		}
+		// check if opcode was already added, again
+		for(int i=0; i<m_opcodetable.size(); i++) {
+			if(m_opcodetable.at(i).fn == instr.fn) {
+				std::printf("CCPU::opcode_set(): error: duplicate opcode (function) ($%02zX)\n",index);
+				std::exit(-1);
+			}
+		}
+		opcode = instr;
 	}
 	auto CCPU::opcode_setPrefix(std::size_t index,CCPUInstrPfx instr) -> void {
 		m_opcodetable_pfx.at(index) = instr;
