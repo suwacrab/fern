@@ -131,6 +131,8 @@ namespace fern {
 				case 0x02: return m_io.m_SC;
 				// timer --------------------------------@/
 				case 0x04: return m_io.m_DIV;
+				// misc ---------------------------------@/
+				case 0x0F: return m_io.m_IF;
 				// sound --------------------------------@/
 				case 0x10: return m_io.m_NR10;
 				case 0x11: return m_io.m_NR10 & (0b11 << 6);
@@ -589,19 +591,21 @@ namespace fern {
 
 	auto CMapperMBC1::read_sram(size_t addr) -> uint32_t {
 		if(!m_useram) { return 0; }
-		if(!m_usebattery) { return 0; }
+		//if(!m_usebattery) { return 0; }
+		
 		addr &= 0x1FFF;
-		error_unimpl("true SRAM read");
-		return 0;
+		return emu()->mem.m_sram[addr];
+		//error_unimpl("true SRAM read");
 	}
 	
+	// TODO: make this good, check for banking, etc.
 	auto CMapperMBC1::write_sram(size_t addr, int data) -> void {
 		if(!m_useram) { return; }
-		if(!m_usebattery) { return; }
+		//if(!m_usebattery) { return; }
 		addr &= 0x1FFF;
 
-		//emu()->mem.m_sram[addr] = data;
-		error_unimpl("true SRAM write");
+		emu()->mem.m_sram[addr] = data;
+		//error_unimpl("true SRAM write");
 	}
 	auto CMapperMBC1::write_rom(size_t addr, int data) -> void {
 		addr &= 0x7FFF;

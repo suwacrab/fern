@@ -70,8 +70,8 @@ namespace fern {
 
 		auto& mem = emu()->mem;
 		const int lcdc = mem.m_io.m_LCDC;
-		std::array<int,fern::SCREEN_X> bg_linebuffer;
-		std::array<int,fern::SCREEN_X> obj_linebuffer;
+		std::array<char,fern::SCREEN_X> bg_linebuffer;
+		std::array<char,fern::SCREEN_X> obj_linebuffer;
 		std::array<std::array<int,4>,2> obp_table;
 		std::array<int,4> bgp_table;
 

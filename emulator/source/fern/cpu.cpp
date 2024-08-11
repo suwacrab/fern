@@ -1298,18 +1298,13 @@ namespace fernOpcodes {
 		cpu->pc_increment(1);
 		cpu->clock_tick(1);
 	}
+	// TODO: check timing.
 	fern_opcodefn(halt) {
 		cpu->pc_increment(1);
 
-		if(!cpu->m_regIME) {
-			std::puts("error: halt while IME unset?");
-			cpu->print_status();
-			std::exit(-1);
-		} else {
-			cpu->halt_waitStart();
-			while(cpu->halt_isWaiting()) {
-				cpu->clock_tick(1);
-			}
+		cpu->halt_waitStart();
+		while(cpu->halt_isWaiting()) {
+			cpu->clock_tick(1);
 		}
 	}
 };
@@ -1841,11 +1836,10 @@ namespace fern {
 				}
 
 				// deal with interrupts, if enabled. ----@/
+				if((mem.m_io.m_IF & mem.m_io.m_IE) != 0) {
+					m_haltwaiting = false;	
+				}
 				if(m_regIME) {
-					if((mem.m_io.m_IF & mem.m_io.m_IE) != 0) {
-						m_haltwaiting = false;	
-					}
-
 					// vblank interrupt
 					if(mem.interrupt_match(BIT(0))) {
 						mem.interrupt_clear(BIT(0));
