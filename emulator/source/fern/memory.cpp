@@ -132,7 +132,15 @@ namespace fern {
 				// timer --------------------------------@/
 				case 0x04: return m_io.m_DIV;
 				// sound --------------------------------@/
+				case 0x10: return m_io.m_NR10;
+				case 0x11: return m_io.m_NR10 & (0b11 << 6);
+				case 0x12: return m_io.m_NR12;
+				case 0x13: return m_io.m_NR13;
 				case 0x14: return m_io.m_NR14 & (1<<6);
+				case 0x15: return 0x00; // ponkotsutank reads it...
+				case 0x20: return m_io.m_NR41;
+				case 0x21: return m_io.m_NR42;
+				case 0x22: return m_io.m_NR43;
 				case 0x24: return m_io.m_NR50;
 				case 0x19: return m_io.m_NR24 & (1<<6);
 				case 0x1E: return m_io.m_NR34 & (1<<6);
@@ -408,6 +416,12 @@ namespace fern {
 				}
 				case 0x43: { // SCX
 					m_io.m_SCX = data;
+					break;
+				}
+				case 0x44: { // LY
+					emu()->cpu.m_lycCooldown = true;
+					emu()->cpu.m_dotclock = 0;
+					m_io.m_LY = data;
 					break;
 				}
 				case 0x45: { // LYC

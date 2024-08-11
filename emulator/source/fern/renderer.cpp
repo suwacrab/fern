@@ -18,7 +18,7 @@ namespace fern {
 		m_window = SDL_CreateWindow("fern",
 			SDL_WINDOWPOS_UNDEFINED,
 			SDL_WINDOWPOS_UNDEFINED,
-			fern::SCREEN_X,144,
+			fern::SCREEN_X,fern::SCREEN_Y,
 			0
 		);
 		
@@ -71,6 +71,7 @@ namespace fern {
 		auto& mem = emu()->mem;
 		const int lcdc = mem.m_io.m_LCDC;
 		std::array<int,fern::SCREEN_X> bg_linebuffer;
+		std::array<int,fern::SCREEN_X> obj_linebuffer;
 		std::array<std::array<int,4>,2> obp_table;
 		std::array<int,4> bgp_table;
 
@@ -86,33 +87,38 @@ namespace fern {
 			bgp_shifter >>= 2;
 		}
 
-		// render to screen
-		const int bgscroll_x = mem.m_io.m_SCX;
-		const int bgscroll_y = mem.m_io.m_SCY;
-		
-		const int fetch_y = (bgscroll_y + draw_y) & 0xFF;
-		size_t addr_chrbase = 0x1800;
-		size_t addr_mapbase = 0x1800;
-		if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
-		if(lcdc & RFlagLCDC::map9C00) addr_mapbase += 0x0400;
-		const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
+		// draw background ------------------------------@/
+		{
+			const int bgscroll_x = mem.m_io.m_SCX;
+			const int bgscroll_y = mem.m_io.m_SCY;
+			
+			const int fetch_y = (bgscroll_y + draw_y) & 0xFF;
+			size_t addr_chrbase = 0x1800;
+			size_t addr_mapbase = 0x1800;
+			if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
+			if(lcdc & RFlagLCDC::map9C00) addr_mapbase += 0x0400;
+			const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
 
-		for(int draw_x=0; draw_x<fern::SCREEN_X; draw_x++) {
-			int fetch_x = (bgscroll_x + draw_x) & 0xFF;
-			// fetch tile
-			int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
-			if(!(lcdc & RFlagLCDC::chr8000)) tile -= 0x80;
-			int tileaddr = addr_chrbase + tile * 0x10;
-			// get pixel
-			tileaddr += (draw_y&7)*2;
-			int lineA = mem.m_vram[tileaddr];
-			int lineB = mem.m_vram[tileaddr+1];
-			int dotA = (lineA >> (7-(fetch_x&7))) & 1;
-			int dotB = (lineB >> (7-(fetch_x&7))) & 1;
-			int dot = dotA | (dotB<<1);
-			m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
-		//	m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
-			bg_linebuffer[draw_x] = dot;
+			for(int draw_x=0; draw_x<fern::SCREEN_X; draw_x++) {
+				int dot = 0;
+				if(lcdc & RFlagLCDC::bgon) {
+					int fetch_x = (bgscroll_x + draw_x) & 0xFF;
+					// fetch tile
+					int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
+					if(!(lcdc & RFlagLCDC::chr8000)) tile -= 0x80;
+					int tileaddr = addr_chrbase + tile * 0x10;
+					// get pixel
+					tileaddr += (fetch_y&7)*2;
+					int lineA = mem.m_vram[tileaddr];
+					int lineB = mem.m_vram[tileaddr+1];
+					int dotA = (lineA >> (7-(fetch_x&7))) & 1;
+					int dotB = (lineB >> (7-(fetch_x&7))) & 1;
+					dot = dotA | (dotB<<1);
+				} 
+			//	m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
+				m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
+				bg_linebuffer[draw_x] = dot;
+			}
 		}
 
 		// draw sprites ---------------------------------@/
@@ -154,7 +160,7 @@ namespace fern {
 			for(int ix=0; ix<8; ix++) {
 				int x = ix;
 				if(oamdat_x+x < 0) continue;
-				if(oamdat_x+x >= fern::SCREEN_X) continue;
+				if(oamdat_x+x >= fern::SCREEN_X) break;
 
 				int dotA = (lineA >> (7-x)) & 1;
 				int dotB = (lineB >> (7-x)) & 1;
@@ -162,10 +168,45 @@ namespace fern {
 				if(dot == 0) continue;
 				if(flipX) x = (7-x);
 				if(oamdat_prio && (bg_linebuffer[oamdat_x+x] > 0)) continue;
+				obj_linebuffer[oamdat_x+x] = dot;
 				m_screen.dot_access(oamdat_x+x,draw_y) = 
 					palet_gray.at(cur_paltable.at(dot));
 			}
 		}
+
+		// draw window layer ----------------------------@/
+		if(lcdc & RFlagLCDC::winon) {
+			const int bgscroll_x = mem.m_io.m_WX + 7;
+			const int bgscroll_y = mem.m_io.m_WY;
+			
+			if(bgscroll_y <= draw_y && bgscroll_x < fern::SCREEN_X) {
+				const int fetch_y = (draw_y - bgscroll_y) & 0xFF;
+				size_t addr_chrbase = 0x1800;
+				size_t addr_mapbase = 0x1800;
+				if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
+				if(lcdc & RFlagLCDC::win9C00) addr_mapbase += 0x0400;
+				const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
+
+				for(int draw_x=0; draw_x<256; draw_x++) {
+					if(draw_x+bgscroll_x-14 >= fern::SCREEN_X) break;
+					if(draw_x+bgscroll_x-14 < 0) break;
+					int dot = 0;
+					// fetch tile
+					int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (draw_x/8)));
+					if(!(lcdc & RFlagLCDC::chr8000)) tile -= 0x80;
+					int tileaddr = addr_chrbase + tile * 0x10;
+					// get pixel
+					tileaddr += (fetch_y&7)*2;
+					int lineA = mem.m_vram.at(tileaddr);
+					int lineB = mem.m_vram.at(tileaddr+1);
+					int dotA = (lineA >> (7-(draw_x&7))) & 1;
+					int dotB = (lineB >> (7-(draw_x&7))) & 1;
+					dot = dotA | (dotB<<1);
+					m_screen.dot_set(draw_x+bgscroll_x-14,draw_y,palet_gray[bgp_table[dot]]);
+				}
+			}
+		}
+
 	}
 
 	// screen -------------------------------------------@/

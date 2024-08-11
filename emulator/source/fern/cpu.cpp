@@ -1739,8 +1739,8 @@ namespace fern {
 					if(mem.m_io.m_LY > 153) {
 						mem.m_io.m_LY = 0;
 					}
-					//did_vblStart = (mem.m_io.m_LY == 144);
-					did_vblStart = (mem.m_io.m_LY == 0);
+					did_vblStart = (mem.m_io.m_LY == 144);
+					//did_vblStart = (mem.m_io.m_LY == 0);
 					do_flipscreen = did_vblStart;
 
 					do_drawline = true;

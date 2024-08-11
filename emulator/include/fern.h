@@ -29,7 +29,7 @@ namespace fern {
 			map9C00 = 0x08,
 			chr8000 = 0x10,
 			winon = 0x20,
-			win9800 = 0x40,
+			win9C00 = 0x40,
 			lcdon = 0x80
 		};
 	}
