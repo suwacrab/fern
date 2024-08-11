@@ -1,7 +1,14 @@
 #include <fern.h>
 #include <vector>
 #include <iostream>
+
+#include <conio.h>
+
 #include <SDL2/SDL.h>
+
+static void wait_getch() {
+	getch();
+}
 
 namespace fern {
 	CEmulator::CEmulator(const CEmuInitFlags* flags) {
@@ -9,7 +16,7 @@ namespace fern {
 		if(!flags) flags = &default_flags;
 
 		m_quitflag = false;
-		m_cgbmode = false;
+		m_cgbEnabled = true;
 
 		m_debugEnable = flags->debug;
 		m_debugSkipping = false;
@@ -173,14 +180,21 @@ namespace fern {
 			case 3: { mem.mapper_setupMBC1(true,true); break; }
 			// unknown
 			default: {
-				std::printf("error: unknown mapper %02Xh\n",hdr_carttype);
+				std::printf("error: ROM has unknown mapper %02Xh\n",hdr_carttype);
+				std::puts("this ROM may either not be supported, or it's not a proper ROM.");
 				std::exit(-1);
 			}
 		}
 
 		// setup cgb flags
 		int cgb_flag = rom_vec.at(0x143);
-		if( (cgb_flag == 0x80) || 
+		if( (cgb_flag == 0x80) || (cgb_flag == 0xC0) ) {
+			m_cgbEnabled = true;
+		} else if(cgb_flag == 0x00) {
+			m_cgbEnabled = false;
+		} else {
+			std::puts("warning: ROM has unknown CGB flag. emulation may not work properly...");
+		}
 
 		// write ROM banks to memory
 		const size_t banksize = 16 * 1024;

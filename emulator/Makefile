@@ -28,6 +28,7 @@ all: $(OUTPUT)
 
 # building
 $(OUTPUT): $(OBJS)
+	@echo -e "\tlinking..."
 	$(CXX) $(LIBFLAGS) $^ $(LIBS) -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
