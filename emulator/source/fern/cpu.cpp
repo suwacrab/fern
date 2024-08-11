@@ -651,7 +651,6 @@ namespace fernOpcodes {
 		cpu->clock_tick(3);
 	}
 
-	// TODO: correct flags
 	fern_opcodefn(ld_a16_sp) {
 		int addr = cpu->read_pc16(1);
 		emu->mem.write(addr+0,cpu->m_SP & 0xFF);
@@ -659,10 +658,11 @@ namespace fernOpcodes {
 		cpu->pc_increment(3);
 		cpu->clock_tick(5);
 	}
+	// TODO: correct flags
 	fern_opcodefn(ld_hl_spimm8) {
 		int offset = static_cast<int8_t>(cpu->read_pc(1));
 		int result = (cpu->m_SP + offset);
-		int losp = cpu->m_SP & 0xFF;
+	//	int losp = cpu->m_SP & 0xFF;
 		int lo = (cpu->m_SP>>8)&1;
 	//	int res_nyb = (cpu->m_SP & 0xF) + (opB & 0xF);
 		
@@ -670,14 +670,12 @@ namespace fernOpcodes {
 		cpu->flag_setZero(false);
 		cpu->flag_setSubtract(false);
 	//	cpu->flag_setHalfcarry(true);
-	//	cpu->flag_setCarry(lo != ((result>>8)&1));
-	   	if(((losp + offset) & 0x100) != 0) {
+		cpu->flag_setCarry(lo != ((result>>8)&1));
+		/*if(((losp + offset) & 0x100) != 0) {
 			cpu->flag_setCarry(true);
-		}
+		}*/
 		cpu->pc_increment(2);
 		cpu->clock_tick(3);
-		printf("sp?");
-		cpu->print_status();
 	}
 
 	fern_opcodefn(ld_sp_hl) {
