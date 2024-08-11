@@ -173,11 +173,12 @@ namespace fern {
 		// get mapper -----------------------------------@/
 		uint8_t hdr_carttype = rom_vec.at(0x0147);
 
+		bool sram_used = false;
 		switch(hdr_carttype) {
 			case 0: { mem.mapper_setupNone(); break; }
 			// MBC1
 			case 1: { mem.mapper_setupMBC1(false,false); break; }
-			case 3: { mem.mapper_setupMBC1(true,true); break; }
+			case 3: { mem.mapper_setupMBC1(true,true); sram_used = true; break; }
 			// unknown
 			default: {
 				std::printf("error: ROM has unknown mapper %02Xh\n",hdr_carttype);
@@ -186,7 +187,7 @@ namespace fern {
 			}
 		}
 
-		// setup cgb flags
+		// setup cgb flags ------------------------------@/
 		int cgb_flag = rom_vec.at(0x143);
 		if( (cgb_flag == 0x80) || (cgb_flag == 0xC0) ) {
 			m_cgbEnabled = true;
@@ -196,10 +197,42 @@ namespace fern {
 			std::puts("warning: ROM has unknown CGB flag. emulation may not work properly...");
 		}
 
+		// setup banks ----------------------------------@/
+		if(sram_used) {
+			int bankcount = 0;
+			int size_id = rom_vec.at(0x149);
+			switch(size_id) {
+				// no RAM
+				case 0:
+				case 1: { bankcount = 0; break; }
+				// 1 banks x 8kib
+				case 2: { bankcount = 1; break; }
+				// 4 banks x 8kib
+				case 3: { bankcount = 4; break; }
+				// 16 banks x 8kib
+				case 4: { bankcount = 16; break; }
+				// 8 banks x 8kib
+				case 5: { bankcount = 8; break; }
+				// unknown
+				default: {
+					std::printf("error: ROM has unknown RAM size %d\n",
+						size_id
+					);
+					std::exit(-1);
+					break;
+				}
+
+			}
+			mem.m_rambankCount = bankcount;
+			std::printf("RAM size: %d KB\n",bankcount * 8);
+		}
+
 		// write ROM banks to memory
-		const size_t banksize = 16 * 1024;
-		const size_t rom_size = (32*1024) * (1 << rom_vec.at(0x148));
+		const size_t banksize = KBSIZE(16);
+		const size_t rom_size = KBSIZE(32) * (1 << rom_vec.at(0x148));
 		const size_t num_banks = rom_size / banksize;
+
+		mem.m_rombankCount = num_banks;
 
 		for(size_t b=0; b<num_banks; b++) {
 			for(size_t i=0; i<banksize; i++) {

@@ -26,6 +26,9 @@ namespace fern {
 		m_io.m_BGP = 0xFC;
 		m_io.m_OBP[0] = 0xFF;
 		m_io.m_OBP[1] = 0xFF;
+
+		m_rambankCount = 0;
+		m_rombankCount = 0;
 	}
 
 	auto CMem::mapper_setupNone() -> void {
@@ -611,14 +614,17 @@ namespace fern {
 		addr &= 0x7FFF;
 		int reg_num = addr >> 13;
 		switch(reg_num) {
+			// RAM enable -------------------------------@/
 			case 0: {
 				if(data == 0xA) {
+					std::puts("mbc: RAM enabled");
 					m_ramEnabled = true;
 				} else {
 					m_ramEnabled = false;
 				}
 				break;
 			}
+			// ROM bank number --------------------------@/
 			case 1: {
 				// deal with MBC1 bank issue (setting 0 == setting 1)
 				if(data == 0) {
@@ -628,10 +634,13 @@ namespace fern {
 				}
 				break;
 			}
+			// RAM bank number/upper ROM bits -----------@/
 			case 2: {
+				std::printf("mbc: RAM bank switch (%d)\n",data & 0b11);
 				m_banknum_hi = data & 0b11;
 				break;
 			}
+			// RAM bank mode ----------------------------@/
 			case 3: {
 				m_rambankmode = data & 1;
 				break;

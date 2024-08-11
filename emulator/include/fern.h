@@ -21,6 +21,9 @@ namespace fern {
 	constexpr int SCREEN_X = 160;
 	constexpr int SCREEN_Y = 144;
 
+	constexpr int KBSIZE(int n) { return 1024 * n; }
+	constexpr int MBSIZE(int n) { return KBSIZE(1024) * n; }
+
 	namespace RFlagLCDC {
 		enum {
 			bgon = 0x01,
@@ -189,7 +192,7 @@ namespace fern {
 
 	// memory -------------------------------------------@/
 	struct CRomBank {
-		std::array<uint8_t,16 * 1024> data;
+		std::array<uint8_t,KBSIZE(16)> data;
 	};
 	struct CMemIO {
 		bool m_joypmode;
@@ -248,13 +251,16 @@ namespace fern {
 	};
 	class CMem : public CEmulatorComponent {
 		public:
-			std::array<uint8_t,2 * 8 * 1024> m_vram; // 2x8kib
-			std::array<uint8_t,16 * 8 * 1024> m_sram; // 16*8kib
-			std::array<uint8_t,8 * 4 * 1024> m_wram; // 8x4kib
+			std::array<uint8_t,2 * KBSIZE(8)> m_vram; // 2x8kib
+			std::array<uint8_t,16 * KBSIZE(8)> m_sram; // 16*8kib
+			std::array<uint8_t,8 * KBSIZE(4)> m_wram; // 8x4kib
 			std::array<uint8_t,160> m_oam; // 4*40b
 			std::array<uint8_t,128> m_hram; // 128b
 			CMemIO m_io;
 			std::array<CRomBank,256> m_rombanks;
+
+			int m_rambankCount;
+			int m_rombankCount;
 
 			CMapper* m_mapper;
 
