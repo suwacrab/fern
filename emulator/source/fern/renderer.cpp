@@ -87,13 +87,20 @@ namespace fern {
 			bgp_shifter >>= 2;
 		}
 
+		if(!(lcdc & RFlagLCDC::lcdon)) {
+			const auto color = palet_gray[0];
+			for(int i=0; i<fern::SCREEN_X; i++) {
+				m_screen.dot_access(i,draw_y) = color;
+			}
+		}
+
 		// draw background ------------------------------@/
 		{
 			const int bgscroll_x = mem.m_io.m_SCX;
 			const int bgscroll_y = mem.m_io.m_SCY;
 			
 			const int fetch_y = (bgscroll_y + draw_y) & 0xFF;
-			size_t addr_chrbase = 0x1800;
+			size_t addr_chrbase = 0x0800;
 			size_t addr_mapbase = 0x1800;
 			if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
 			if(lcdc & RFlagLCDC::map9C00) addr_mapbase += 0x0400;
@@ -104,9 +111,12 @@ namespace fern {
 				if(lcdc & RFlagLCDC::bgon) {
 					int fetch_x = (bgscroll_x + draw_x) & 0xFF;
 					// fetch tile
-					int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
-					if(!(lcdc & RFlagLCDC::chr8000)) tile -= 0x80;
+					int tile = (lcdc & RFlagLCDC::chr8000)
+						? mem.m_vram.at(addr_mapline + (fetch_x/8))
+						: (static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8))) + 0x80) & 0xFF;
+					
 					int tileaddr = addr_chrbase + tile * 0x10;
+					
 					// get pixel
 					tileaddr += (fetch_y&7)*2;
 					int lineA = mem.m_vram[tileaddr];
@@ -183,7 +193,7 @@ namespace fern {
 				const int fetch_y = (draw_y - bgscroll_y) & 0xFF;
 				size_t addr_chrbase = 0x1800;
 				size_t addr_mapbase = 0x1800;
-				if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
+				if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x1800;
 				if(lcdc & RFlagLCDC::win9C00) addr_mapbase += 0x0400;
 				const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
 
