@@ -1,3 +1,6 @@
 emulator/workdata/*.gb
+emulator/workdata/*.gbc
+emulator/workdata/*.sav
+emulator/workdata/*.bps
 emulator/workdata/testsuite/*
 emulator/build/**/*.d
