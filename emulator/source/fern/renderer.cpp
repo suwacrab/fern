@@ -111,12 +111,14 @@ namespace fern {
 				if(lcdc & RFlagLCDC::bgon) {
 					int fetch_x = (bgscroll_x + draw_x) & 0xFF;
 					// fetch tile
-					int tile = (lcdc & RFlagLCDC::chr8000)
-						? mem.m_vram.at(addr_mapline + (fetch_x/8))
-						: (static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8))) + 0x80) & 0xFF;
-					
+					int tile = 0;
+					if(lcdc & RFlagLCDC::chr8000) {
+						tile = mem.m_vram.at(addr_mapline + (fetch_x/8));
+					} else {
+						tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
+						tile = (tile + 0x80) & 0xFF;
+					}
 					int tileaddr = addr_chrbase + tile * 0x10;
-					
 					// get pixel
 					tileaddr += (fetch_y&7)*2;
 					int lineA = mem.m_vram[tileaddr];
