@@ -1003,7 +1003,7 @@ namespace fernOpcodes {
 		cpu->clock_tick(3);
 	}
 	fern_opcodefn(pop_af) {
-		cpu->m_regF = cpu->stack_pop8();
+		cpu->m_regF = cpu->stack_pop8() & 0xF0;
 		cpu->m_regA = cpu->stack_pop8();
 		cpu->pc_increment(1);
 		cpu->clock_tick(3);
@@ -1741,7 +1741,7 @@ namespace fern {
 					}
 					//did_vblStart = (mem.m_io.m_LY == 144);
 					did_vblStart = (mem.m_io.m_LY == 0);
-					do_flipscreen = (mem.m_io.m_LY == 0);
+					do_flipscreen = did_vblStart;
 
 					do_drawline = true;
 					m_dotclock -= 456;
@@ -1814,6 +1814,7 @@ namespace fern {
 					mem.m_io.m_TIMA += 1;
 					if(mem.m_io.m_TIMA == 0) {
 						mem.m_io.m_IF |= RFlagIF::timer;
+						mem.m_io.m_TIMA = mem.m_io.m_TMA;
 					}
 				}
 

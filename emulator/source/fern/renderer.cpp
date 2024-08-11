@@ -22,19 +22,16 @@ namespace fern {
 			0
 		);
 		
-
+		// create renderer based on vsync enable
 		if(!vsync_enabled()) {
 			m_renderer = SDL_CreateRenderer(
 				m_window,-1,
-			//	SDL_RENDERER_ACCELERATED
 				SDL_RENDERER_SOFTWARE
-				//	| SDL_RENDERER_PRESENTVSYNC
 			);
 		} else {
 			m_renderer = SDL_CreateRenderer(
 				m_window,-1,
 				SDL_RENDERER_ACCELERATED
-			//	SDL_RENDERER_SOFTWARE
 					| SDL_RENDERER_PRESENTVSYNC
 			);
 		}
@@ -104,7 +101,7 @@ namespace fern {
 			int fetch_x = (bgscroll_x + draw_x) & 0xFF;
 			// fetch tile
 			int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
-			tile -= 0x80;
+			if(!(lcdc & RFlagLCDC::chr8000)) tile -= 0x80;
 			int tileaddr = addr_chrbase + tile * 0x10;
 			// get pixel
 			tileaddr += (draw_y&7)*2;

@@ -22,6 +22,10 @@ namespace fern {
 		m_io.m_LCDC = 0x91;
 		m_io.m_IF = 0x01;
 		m_io.m_DIV = 0xAB;
+
+		m_io.m_BGP = 0xFC;
+		m_io.m_OBP[0] = 0xFF;
+		m_io.m_OBP[1] = 0xFF;
 	}
 
 	auto CMem::mapper_setupNone() -> void {
@@ -75,6 +79,17 @@ namespace fern {
 			else if(addr_hi >= 0xC0 && addr_hi <= 0xDF) {
 				return m_wram.at(4*1024 + (addr & 0x0FFF));
 			}
+			// $E000-$FDFF : HRAM
+			else if(addr_hi >= 0xE0 && addr_hi <= 0xFD) {
+				return m_wram.at(addr & 0x1FFF);
+			}
+			// $FE00-$FE9F : OAM
+			else if(addr_hi == 0xFE) {
+				if(addr_lo >= 0xA0 || !oam_accessible()) {
+					return 0xFF;
+				}
+				return m_oam.at(addr_lo);
+			}
 			// $FF00-$FFFF : HRAM
 			else if(addr_hi == 0xFF) {
 				return read_hram(addr_lo);
@@ -127,6 +142,8 @@ namespace fern {
 				case 0x41: return m_io.m_STAT;
 				case 0x44: return m_io.m_LY;
 				case 0x47: return m_io.m_BGP;
+				case 0x4A: return m_io.m_WY;
+				case 0x4B: return m_io.m_WX;
 				// unknown ------------------------------@/
 				default: {
 					std::printf("unimplemented: IO read (%02Xh)\n",addr);
@@ -232,7 +249,7 @@ namespace fern {
 					break;
 				}
 				case 0x01: { // SB
-					std::printf("serial write ($%02X)\n",data);
+					std::printf("warning: unimplemented link cable write ($%02X)\n",data);
 					m_io.m_SB = data;
 					break;
 				}
@@ -282,6 +299,7 @@ namespace fern {
 					m_io.m_NR14 = data & mask;
 					break;
 				}
+				case 0x15: break;
 
 				case 0x16: { // NR21
 					m_io.m_NR21 = data;
@@ -322,6 +340,7 @@ namespace fern {
 					m_io.m_NR34 = data & mask;
 					break;
 				}
+				case 0x1F: break;
 
 				case 0x20: { // NR41
 					m_io.m_NR41 = data & 63;
