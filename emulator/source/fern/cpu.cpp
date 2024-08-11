@@ -1139,9 +1139,6 @@ namespace fernOpcodes {
 					cpu->flag_setSubtract(false);
 					cpu->flag_setHalfcarry(false);
 					cpu->flag_setCarry(false);
-					
-					clock_ticks = uses_hl ? 4 : 2;
-					writeback_hldat = uses_hl;
 				} else {
 					int lo = cur_reg() & 1;
 					reg_write(cur_reg() >> 1);
@@ -1149,10 +1146,9 @@ namespace fernOpcodes {
 					cpu->flag_setSubtract(false);
 					cpu->flag_setHalfcarry(false);
 					cpu->flag_setCarry(lo);
-					
-					clock_ticks = uses_hl ? 4 : 2;
-					writeback_hldat = uses_hl;
 				}
+				clock_ticks = uses_hl ? 4 : 2;
+				writeback_hldat = uses_hl;
 				break;
 			}
 			// BIT --------------------------------------@/

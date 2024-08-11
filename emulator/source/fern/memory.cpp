@@ -464,7 +464,7 @@ namespace fern {
 				
 				// CGB? ---------------------------------@/
 				case 0x68: { // BGPI
-					if(emu()->is_cgb()) {
+					if(emu()->cgb_enabled()) {
 						std::puts("CGB palettes unimplemented");
 						std::exit(-1);
 						//m_io.m_BGPI = data & 0b111;
@@ -474,7 +474,7 @@ namespace fern {
 					break;
 				}
 				case 0x69: { // BGPD
-					if(emu()->is_cgb()) {
+					if(emu()->cgb_enabled()) {
 						std::puts("CGB palettes unimplemented");
 						std::exit(-1);
 						//m_io.m_BGPD = data & 0b111;
@@ -484,7 +484,7 @@ namespace fern {
 					break;
 				}
 				case 0x6A: { // OBPI
-					if(emu()->is_cgb()) {
+					if(emu()->cgb_enabled()) {
 						std::puts("CGB palettes unimplemented");
 						std::exit(-1);
 						//m_io.m_OBPI = data & 0b111;
@@ -494,7 +494,7 @@ namespace fern {
 					break;
 				}
 				case 0x6B: { // OBPD
-					if(emu()->is_cgb()) {
+					if(emu()->cgb_enabled()) {
 						std::puts("CGB palettes unimplemented");
 						std::exit(-1);
 						//m_io.m_OBPD = data & 0b111;
@@ -504,7 +504,7 @@ namespace fern {
 					break;
 				}
 				case 0x70: { // SVBK
-					if(emu()->is_cgb()) {
+					if(emu()->cgb_enabled()) {
 						m_io.m_SVBK = data & 0b111;
 					} else {
 						warn_cgb_reg("SVBK",data);

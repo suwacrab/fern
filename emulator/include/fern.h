@@ -397,7 +397,7 @@ namespace fern {
 			auto opcode_set(std::size_t index,CCPUInstr instr) -> void;
 			auto opcode_setRaw(std::size_t index,CCPUInstr instr) -> void;
 			auto opcode_setPrefix(std::size_t index,CCPUInstrPfx instr) -> void;
-			
+
 			auto print_status(bool instr_history = false) -> void;
 
 			auto reset() -> void;
@@ -459,7 +459,7 @@ namespace fern {
 	class CEmulator {
 		private:
 			bool m_quitflag;
-			bool m_cgbmode;
+			bool m_cgbEnabled;
 			bool m_debugEnable;
 			bool m_debugSkipping;
 			int m_debugSkipAddr;
@@ -474,7 +474,7 @@ namespace fern {
 			auto process_message() -> void;
 			auto button_held(int btn) -> bool;
 
-			auto is_cgb() const -> bool { return m_cgbmode; }
+			auto cgb_enabled() const -> bool { return m_cgbEnabled; }
 			auto debug_on() const -> bool { return m_debugEnable; }
 			auto debug_set(bool enable) -> void { m_debugEnable = enable; }
 

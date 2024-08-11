@@ -178,6 +178,10 @@ namespace fern {
 			}
 		}
 
+		// setup cgb flags
+		int cgb_flag = rom_vec.at(0x143);
+		if( (cgb_flag == 0x80) || 
+
 		// write ROM banks to memory
 		const size_t banksize = 16 * 1024;
 		const size_t rom_size = (32*1024) * (1 << rom_vec.at(0x148));
