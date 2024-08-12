@@ -677,6 +677,18 @@ namespace fernOpcodes {
 		cpu->pc_increment(2);
 		cpu->clock_tick(3);
 	}
+	fern_opcodefn(add_sp_imm8) {
+		int offset = static_cast<int8_t>(cpu->read_pc(1));
+		int result = (cpu->m_SP + offset);
+		int lo = (cpu->m_SP>>8)&1;
+		
+		cpu->m_SP = result & 0xFFFF;
+		cpu->flag_setZero(false);
+		cpu->flag_setSubtract(false);
+		cpu->flag_setCarry(lo != ((result>>8)&1));
+		cpu->pc_increment(2);
+		cpu->clock_tick(4);
+	}
 
 	fern_opcodefn(ld_sp_hl) {
 		cpu->m_SP = cpu->reg_hl();
@@ -1417,6 +1429,7 @@ namespace fern {
 		opcode_set(0x31,CCPUInstr(INSTRFN_NAME(ld_sp_imm16),"ld sp, imm16"));
 		
 		opcode_set(0x08,CCPUInstr(INSTRFN_NAME(ld_a16_sp),"ld [a16], sp"));
+		opcode_set(0xe8,CCPUInstr(INSTRFN_NAME(add_sp_imm8),"add sp, imm8"));
 		opcode_set(0xf8,CCPUInstr(INSTRFN_NAME(ld_hl_spimm8),"ld hl, sp+imm8"));
 		opcode_set(0xf9,CCPUInstr(INSTRFN_NAME(ld_sp_hl),"ld sp, hl"));
 
@@ -1768,6 +1781,7 @@ namespace fern {
 				// 4 dots per cycle
 				if(mem.m_io.ppu_enabled()) {
 					int mul = speed_doubled() ? 2 : 4;
+				//	int mul = 4;
 					m_dotclock += (wait_cycles*mul);
 				}
 

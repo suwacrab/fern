@@ -582,6 +582,10 @@ namespace fern {
 					}
 					break;
 				}
+				case 0x56: { // RP
+					// unemulated...
+					break;
+				}
 				
 				case 0x68: { // BGPI
 					if(emu()->cgb_enabled()) {
@@ -831,10 +835,11 @@ namespace fern {
 		addr &= 0x7FFF;
 		data &= 0xFF;
 
-		int reg_num = addr >> 13;
+		int reg_num = addr >> 12;
 		switch(reg_num) {
 			// RAM enable -------------------------------@/
-			case 0: {
+			case 0:
+			case 1: {
 				if(data == 0xA) {
 					//std::puts("mbc: RAM enabled");
 					m_ramEnabled = true;
@@ -844,18 +849,19 @@ namespace fern {
 				break;
 			}
 			// ROM bank number --------------------------@/
-			case 1: {
+			case 2: {
 				m_rombanknum = data;
 				break;
 			}
 			// ROM bank number --------------------------@/
-			case 2: {
+			case 3: {
 				m_rombanknum_hi = data & 1;
 				break;
 			}
 			// RAM bank number --------------------------@/
-			case 3: {
-				std::printf("mbc: RAM bank switch (%d)\n",data & 0x0F);
+			case 4:
+			case 5: {
+			//	std::printf("mbc: RAM bank switch (%d)\n",data & 0x0F);
 				m_rambanknum = data & 0x0F;
 				break;
 			}

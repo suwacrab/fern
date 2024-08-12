@@ -269,6 +269,59 @@ namespace fern {
 					palet_obj[attrib_palet*4 + dot];
 			}
 		}
+
+		// draw window layer ----------------------------@/
+		if(lcdc & RFlagLCDC::winon) {
+			const int bgscroll_x = mem.m_io.m_WX + 7;
+			const int bgscroll_y = mem.m_io.m_WY;
+			
+			if(bgscroll_y <= draw_y && bgscroll_x < fern::SCREEN_X) {
+				const int fetch_y = (draw_y - bgscroll_y) & 0xFF;
+				size_t addr_chrbase = 0x0800;
+				size_t addr_mapbase = 0x1800;
+				if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
+				if(lcdc & RFlagLCDC::win9C00) addr_mapbase += 0x0400;
+				const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
+
+				for(int draw_x=0; draw_x<256; draw_x++) {
+					if(draw_x+bgscroll_x-14 >= fern::SCREEN_X) break;
+					if(draw_x+bgscroll_x-14 < 0) break;
+					int dot = 0;
+					// fetch tile
+					const int mapaddr = addr_mapline + (draw_x/8);
+					const int mapaddr_attrib = mapaddr + KBSIZE(8);
+					const int attrib = mem.m_vram.at(mapaddr_attrib);
+					int attrib_paletnum = attrib & 7;
+					int attrib_banknum = RFlagMapAttrib::bank(attrib);
+
+					int tile = 0;
+					if(lcdc & RFlagLCDC::chr8000) {
+						tile = mem.m_vram.at(mapaddr);
+					} else {
+						tile = static_cast<int8_t>(mem.m_vram.at(mapaddr));
+						tile = (tile + 0x80) & 0xFF;
+					}
+					int tileaddr = (KBSIZE(8) * attrib_banknum) + addr_chrbase + tile * 0x10;
+					
+					// get pixel
+					int tileY = (fetch_y&7);
+					int tileX = (draw_x&7);
+					if(RFlagMapAttrib::flipX(attrib)) tileX = 7-tileX;
+					if(RFlagMapAttrib::flipY(attrib)) tileY = 7-tileY;
+					tileaddr += tileY*2;
+					int lineA = mem.m_vram[tileaddr];
+					int lineB = mem.m_vram[tileaddr+1];
+					int dotA = (lineA >> (7-tileX)) & 1;
+					int dotB = (lineB >> (7-tileX)) & 1;
+					dot = dotA | (dotB<<1);
+
+					m_screen.dot_set(draw_x+bgscroll_x-14,draw_y,
+					//	palet_gray[bgp_table[dot]]
+						palet_BG[attrib_paletnum*4 + dot]
+					);
+				}
+			}
+		}
 	}
 	auto CRenderer::draw_lineDMG(int draw_y) -> void {
 		if(draw_y < 0 || draw_y >= 144) return;
@@ -436,7 +489,6 @@ namespace fern {
 				}
 			}
 		}
-
 	}
 
 	// screen -------------------------------------------@/
