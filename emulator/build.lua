@@ -64,8 +64,8 @@ if argsearch("build_release") then
 	
 	-- setup release folder
 	fs_copy("bin\\fern.exe","release\\fern\\")
-	fs_copy("redistrib\\SDL2.dll","release\\fern\\")
-	fs_copy("redistrib\\SDL2_ttf.dll","release\\fern\\")
+--	fs_copy("redistrib\\SDL2.dll","release\\fern\\")
+--	fs_copy("redistrib\\SDL2_ttf.dll","release\\fern\\")
 end
 
 if argsearch("build_zip") then

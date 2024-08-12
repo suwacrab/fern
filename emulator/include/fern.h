@@ -22,6 +22,8 @@ namespace fern {
 
 	constexpr int SCREEN_X = 160;
 	constexpr int SCREEN_Y = 144;
+	constexpr int SCREENVRAM_X = 8 * 32;
+	constexpr int SCREENVRAM_Y = 8 * 24;
 
 	constexpr int KBSIZE(int n) { return 1024 * n; }
 	constexpr int MBSIZE(int n) { return KBSIZE(1024) * n; }
@@ -118,7 +120,7 @@ namespace fern {
 		public:
 			CScreen(int width, int height);
 
-			auto in_range(int x, int y) -> bool;
+			auto render_toSurface(SDL_Surface* surface) -> void;
 
 			auto clear(CColor color) -> void;
 			auto dot_set(int x, int y, CColor color) -> void;
@@ -126,6 +128,7 @@ namespace fern {
 				return m_bmp[x + y * width()];
 			}
 
+			auto in_range(int x, int y) -> bool;
 			constexpr auto width() const -> int { return m_width; }
 			constexpr auto height() const -> int { return m_height; }
 			constexpr auto dimensions() const -> int { return width() * height(); }
@@ -133,8 +136,10 @@ namespace fern {
 	class CRenderer : public CEmulatorComponent {
 		private:
 			SDL_Window* m_window;
+			SDL_Window* m_windowVRAM;
 			SDL_Renderer* m_renderer;
 			CScreen m_screen;
+			CScreen m_screenVRAM;
 			int m_timeLastFrame;
 			bool m_vsyncEnabled;
 		public:
@@ -143,6 +148,7 @@ namespace fern {
 
 			auto window_create(bool vsync) -> void;
 
+			auto render_vramwindow() -> void;
 			auto present() -> void;
 			auto draw_line(int draw_y) -> void;
 			auto draw_lineDMG(int draw_y) -> void;

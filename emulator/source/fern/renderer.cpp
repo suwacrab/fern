@@ -12,10 +12,12 @@ namespace fern {
 	}
 
 	// renderer -----------------------------------------@/
-	CRenderer::CRenderer() 
-	: m_screen(fern::SCREEN_X,144) {
+	CRenderer::CRenderer() :
+	 m_screen(fern::SCREEN_X,fern::SCREEN_Y),
+     m_screenVRAM(fern::SCREENVRAM_X,fern::SCREENVRAM_Y) {
 		m_timeLastFrame = 0;
 		m_window = nullptr;
+		m_windowVRAM = nullptr;
 		m_vsyncEnabled = false;
 	}
 	CRenderer::~CRenderer() {
@@ -30,7 +32,6 @@ namespace fern {
 			fern::SCREEN_X,fern::SCREEN_Y,
 			0
 		);
-		SDL_SetWindowTitle(m_window,"fern");
 		
 		// create renderer based on vsync enable
 		if(!vsync_enabled()) {
@@ -47,45 +48,77 @@ namespace fern {
 		}
 
 		// create other window for debug
-		
+		// it's essentially two 8x24 screens, side by side
+		std::array<int,2> winpos_main;
+		SDL_GetWindowPosition(m_window,&winpos_main[0],&winpos_main[1]);
+		m_windowVRAM = SDL_CreateWindow("VRAM",
+			winpos_main[0] + fern::SCREEN_X + 32,
+			winpos_main[1],
+			fern::SCREENVRAM_X,
+			fern::SCREENVRAM_Y,
+			0
+		);
 	}
 
-	auto CRenderer::present() -> void {
-		/*SDL_RenderClear(m_renderer);
-		for(int y=0; y<m_screen.height(); y++) {
-			for(int x=0; x<m_screen.width(); x++) {
-				const auto color = m_screen.dot_access(x,y);
-				SDL_SetRenderDrawColor(m_renderer,color.r,color.g,color.b,255);
-				SDL_RenderDrawPoint(m_renderer,x,y);
-			}
-		}
-		SDL_RenderPresent(m_renderer);*/
-		auto surface = SDL_GetWindowSurface(m_window);
-		SDL_LockSurface(surface);
-		auto surface_bmp = static_cast<uint8_t*>(surface->pixels); {
-			for(int y=0; y<m_screen.height(); y++) {
-				auto row = surface_bmp + (y * surface->pitch);
-				for(int x=0; x<m_screen.width(); x++) {
-					const auto color = m_screen.dot_access(x,y);
-					row[4*x + 0] = color.b;
-					row[4*x + 1] = color.g;
-					row[4*x + 2] = color.r;
+	auto CRenderer::render_vramwindow() -> void {
+		const std::array<fern::CColor,4> palet_gray = {
+			fern::CColor(255,255,255),
+			fern::CColor(192,192,192),
+			fern::CColor(112,112,112),
+			fern::CColor(12,12,12)
+		};
+		auto& mem = emu()->mem;
+		
+		// bank 0
+		for(int i=0; i<0x180; i++) {
+			// get tile address
+			int addr = i * 0x10;
+			int screenX = (i & 0xF) * 8;
+			int screenY = (i / 16) * 8;
+
+			// read lines
+			for(int y=0; y<8; y++) {
+				int lineA = mem.m_vram[addr + 0 + y*2];
+				int lineB = mem.m_vram[addr + 1 + y*2];
+				lineB <<= 1;
+				// lineA: -Fbbbbbbb
+				// lineB: Fbbbbbbb0
+				for(int x=0; x<8; x++) {
+					int dotA = (lineA >> 7) & 0b1;
+					int dotB = (lineB >> 7) & 0b10;
+					int dot = dotA | dotB;
+					auto color = palet_gray[dot];
+					m_screenVRAM.dot_access(screenX+x,screenY+y) = color;
+					lineA <<= 1;
+					lineB <<= 1;
 				}
 			}
 		}
-		SDL_UnlockSurface(surface);
+	}
 
+	auto CRenderer::present() -> void {
+		render_vramwindow();
+		if(auto surface = SDL_GetWindowSurface(m_window)) {
+			m_screen.render_toSurface(surface);
+		}
+		if(auto surface = SDL_GetWindowSurface(m_windowVRAM)) {
+			m_screenVRAM.render_toSurface(surface);
+		}
+
+		// wait til next frame
 		if(!vsync_enabled()) {
-			SDL_Delay(16);
 			// busy wait for next frame...
-		//	while(SDL_GetTicks() - m_timeLastFrame < (1000 / 60));
-		//	m_timeLastFrame = SDL_GetTicks();
+			while(SDL_GetTicks() - m_timeLastFrame < (1000 / 60)) {
+				SDL_Delay(1);
+			}
+			m_timeLastFrame = SDL_GetTicks();
 		} else {
 			SDL_RenderClear(m_renderer);
 			SDL_RenderPresent(m_renderer);
 		}
 
 		SDL_UpdateWindowSurface(m_window);
+		SDL_UpdateWindowSurface(m_windowVRAM);
 	}
 	auto CRenderer::draw_line(int draw_y) -> void {
 		if(emu()->cgb_enabled()) {
@@ -361,6 +394,22 @@ namespace fern {
 		for(int i=0; i<dimensions(); i++) {
 			m_bmp[i] = color;
 		}
+	}
+
+	auto CScreen::render_toSurface(SDL_Surface* surface) -> void {
+		SDL_LockSurface(surface);
+		auto surface_bmp = static_cast<uint8_t*>(surface->pixels); {
+			for(int y=0; y<height(); y++) {
+				auto row = surface_bmp + (y * surface->pitch);
+				for(int x=0; x<width(); x++) {
+					const auto color = dot_access(x,y);
+					row[4*x + 0] = color.b;
+					row[4*x + 1] = color.g;
+					row[4*x + 2] = color.r;
+				}
+			}
+		}
+		SDL_UnlockSurface(surface);
 	}
 }
 

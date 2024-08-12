@@ -27,8 +27,8 @@ namespace fern {
 		}
 
 		std::atexit(SDL_Quit);
-	//	renderer.window_create(flags->vsync);
-		renderer.window_create(true);
+		renderer.window_create(flags->vsync);
+	//	renderer.window_create(true);
 	}
 
 	auto CEmulator::savedata_getFilename() -> std::string {
@@ -56,6 +56,12 @@ namespace fern {
 		SDL_Event eve;
 		while(SDL_PollEvent(&eve)) {
 			switch(eve.type) {
+				case SDL_WINDOWEVENT: {
+					if(eve.window.event == SDL_WINDOWEVENT_CLOSE) {
+						quit();
+					}
+					break;
+				}
 				case SDL_QUIT: {
 					quit();
 					break;
