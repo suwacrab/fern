@@ -69,11 +69,11 @@ namespace fern {
 		};
 		auto& mem = emu()->mem;
 		
-		// bank 0
+		for(int bank=0; bank<2; bank++)
 		for(int i=0; i<0x180; i++) {
 			// get tile address
-			int addr = i * 0x10;
-			int screenX = (i & 0xF) * 8;
+			int addr = (KBSIZE(8)*bank) + i * 0x10;
+			int screenX = (i & 0xF) * 8 + (bank * 128);
 			int screenY = (i / 16) * 8;
 
 			// read lines
@@ -143,6 +143,17 @@ namespace fern {
 		std::array<char,fern::SCREEN_X> bg_linebuffer;
 		//std::array<char,fern::SCREEN_X> obj_linebuffer;
 
+		auto palet_getTrue = [&](const auto& src_mem) {
+			std::array<fern::CColor,32> palet;
+			for(int i=0; i<32; i++) {
+				int data = src_mem[i*2 + 0] | (src_mem[i*2 + 1] << 8);
+				palet[i] = fern::CColor::from_rgb15(data);
+			}
+			return palet;
+		};
+		const auto palet_BG = palet_getTrue(mem.m_paletBG);
+		const auto palet_obj = palet_getTrue(mem.m_paletObj);
+
 		// draw backplane, if lcd's off -----------------@/
 		if(!(lcdc & RFlagLCDC::lcdon)) {
 			const auto color = fern::CColor(0,255,0);
@@ -165,29 +176,97 @@ namespace fern {
 			const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
 
 			for(int draw_x=0; draw_x<fern::SCREEN_X; draw_x++) {
+				fern::CColor color;
 				int dot = 0;
 				if(lcdc & RFlagLCDC::bgon) {
 					int fetch_x = (bgscroll_x + draw_x) & 0xFF;
 					// fetch tile
+					const int mapaddr = addr_mapline + (fetch_x/8);
+					const int mapaddr_attrib = mapaddr + KBSIZE(8);
+					const int attrib = mem.m_vram.at(mapaddr_attrib);
+					int attrib_paletnum = attrib & 7;
+					int attrib_banknum = RFlagMapAttrib::bank(attrib);
+
 					int tile = 0;
 					if(lcdc & RFlagLCDC::chr8000) {
-						tile = mem.m_vram.at(addr_mapline + (fetch_x/8));
+						tile = mem.m_vram.at(mapaddr);
 					} else {
-						tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
+						tile = static_cast<int8_t>(mem.m_vram.at(mapaddr));
 						tile = (tile + 0x80) & 0xFF;
 					}
-					int tileaddr = addr_chrbase + tile * 0x10;
+					int tileaddr = (KBSIZE(8) * attrib_banknum) + addr_chrbase + tile * 0x10;
+					
+					// fetch attributes
+
 					// get pixel
-					tileaddr += (fetch_y&7)*2;
+					int tileY = (fetch_y&7);
+					int tileX = (fetch_x&7);
+					if(RFlagMapAttrib::flipX(attrib)) tileX = 7-tileX;
+					if(RFlagMapAttrib::flipY(attrib)) tileY = 7-tileY;
+					tileaddr += tileY*2;
 					int lineA = mem.m_vram[tileaddr];
 					int lineB = mem.m_vram[tileaddr+1];
-					int dotA = (lineA >> (7-(fetch_x&7))) & 1;
-					int dotB = (lineB >> (7-(fetch_x&7))) & 1;
+					int dotA = (lineA >> (7-tileX)) & 1;
+					int dotB = (lineB >> (7-tileX)) & 1;
 					dot = dotA | (dotB<<1);
-				} 
-			//	m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
-				m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
+					color = palet_BG[attrib_paletnum*4 + dot];
+				} else {
+					color = palet_gray[0];
+				}
+				m_screen.dot_set(draw_x,draw_y,color);
 				bg_linebuffer[draw_x] = dot;
+			}
+		}
+	
+		// draw sprites ---------------------------------@/
+		const bool spr_size2x = (mem.m_io.m_LCDC & 0x04) != 0;
+		const int spr_height = spr_size2x ? 16 : 8;
+		
+		for(int spr_idx=0; spr_idx<40; spr_idx++) {
+			const std::array<int,4> oamdata = { 
+				mem.m_oam[spr_idx*4 + 0],
+				mem.m_oam[spr_idx*4 + 1],
+				mem.m_oam[spr_idx*4 + 2],
+				mem.m_oam[spr_idx*4 + 3]
+			};
+
+			const int oamdat_y = oamdata[0] - 16;
+			const int oamdat_x = oamdata[1] - 8;
+			const bool oamdat_prio = (oamdata[3] >> 7) & 1;
+			const bool flipX = (oamdata[3]>>5) & 1;
+			const bool flipY = (oamdata[3]>>6) & 1;
+			const int attrib_palet = oamdata[3] & 7;
+			const int attrib_bank = (oamdata[3]>>3) & 1;
+
+			if(oamdat_y <= -16 || oamdat_y >= fern::SCREEN_Y) continue;
+			if(oamdat_x <= -8 || oamdat_x >= fern::SCREEN_X) continue;
+			if(draw_y < oamdat_y) continue;
+			if((draw_y - oamdat_y) >= spr_height) continue;
+
+			// get relative line of the sprite to draw
+			int line_y = (draw_y - oamdat_y);
+			if(flipY) line_y = (spr_height-1) - line_y;
+
+			// get tile address
+			int tileaddr = (attrib_bank * KBSIZE(8)) + (oamdata[2] * 0x10);
+			tileaddr += line_y * 2;
+			if(spr_size2x) tileaddr &= 0xFFFE;
+			int lineA = mem.m_vram[tileaddr];
+			int lineB = mem.m_vram[tileaddr+1];
+
+			for(int ix=0; ix<8; ix++) {
+				int x = ix;
+				if(oamdat_x+x < 0) continue;
+				if(oamdat_x+x >= fern::SCREEN_X) break;
+
+				int dotA = (lineA >> (7-x)) & 1;
+				int dotB = (lineB >> (7-x)) & 1;
+				int dot = dotA | (dotB<<1);
+				if(dot == 0) continue;
+				if(flipX) x = (7-x);
+				if(oamdat_prio && (bg_linebuffer[oamdat_x+x] > 0)) continue;
+				m_screen.dot_access(oamdat_x+x,draw_y) = 
+					palet_obj[attrib_palet*4 + dot];
 			}
 		}
 	}

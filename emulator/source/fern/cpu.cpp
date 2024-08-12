@@ -1230,10 +1230,6 @@ namespace fernOpcodes {
 		std::exit(-1);
 	}
 
-	fern_opcodefn(nop) {
-		cpu->pc_increment(1);
-		cpu->clock_tick(1);
-	}
 	fern_opcodefn(cpl) {
 		cpu->m_regA = ~cpu->m_regA;
 		cpu->flag_setSubtract(true);
@@ -1302,6 +1298,26 @@ namespace fernOpcodes {
 		while(cpu->halt_isWaiting()) {
 			cpu->clock_tick(1);
 		}
+	}
+	fern_opcodefn(nop) {
+		cpu->pc_increment(1);
+		cpu->clock_tick(1);
+	}
+	fern_opcodefn(stop) {
+		// check if speed should be 2x
+		if(emu->cgb_enabled()) {
+			if(emu->mem.m_io.m_KEY1 & 1) {
+				emu->mem.m_io.m_KEY1 ^= BIT(7);
+				emu->mem.m_io.m_KEY1 &= BIT(7);
+			}
+			cpu->m_speedDoubled = (emu->mem.m_io.m_KEY1 >> 7);
+		} else {
+			std::puts("error: stop during normal DMG use?");
+			cpu->print_status();
+			std::exit(-1);
+		}
+		cpu->pc_increment(2);
+		cpu->clock_tick(1);
 	}
 };
 
@@ -1473,7 +1489,6 @@ namespace fern {
 		opcode_set(0xCB,CCPUInstr(INSTRFN_NAME(prefix),"$CB ($xx)"));
 
 		// misc
-		opcode_set(0x00,CCPUInstr(INSTRFN_NAME(nop),"nop"));
 		opcode_set(0x2F,CCPUInstr(INSTRFN_NAME(cpl),"cpl"));
 		opcode_set(0x37,CCPUInstr(INSTRFN_NAME(scf),"scf"));
 		opcode_set(0x3F,CCPUInstr(INSTRFN_NAME(ccf),"ccf"));
@@ -1481,12 +1496,15 @@ namespace fern {
 		opcode_set(0xF3,CCPUInstr(INSTRFN_NAME(di),"di"));
 		opcode_set(0xFB,CCPUInstr(INSTRFN_NAME(ei),"ei"));
 		opcode_set(0x76,CCPUInstr(INSTRFN_NAME(halt),"halt"));
+		opcode_set(0x00,CCPUInstr(INSTRFN_NAME(nop),"nop"));
+		opcode_set(0x10,CCPUInstr(INSTRFN_NAME(stop),"stop"));
 		
 		// reset cpu state ------------------------------@/
 		reset();
 	}
 
 	auto CCPU::reset() -> void {
+		m_speedDoubled = false;
 		m_should_enableIME = false;
 		m_regIME = false;
 		m_haltwaiting = false;
@@ -1571,18 +1589,34 @@ namespace fern {
 
 	auto CCPU::print_status(bool instr_history) -> void {
 		if(!m_curopcode_ptr) return;
-		auto &mem = emu()->mem;
+
+		auto tostr_bin = [=](int n,int cnt = 8) {
+			const char chr_lut[] = "0123456789ABCDEF";
+			std::string str;
+			for(int i=0; i<cnt; i++) {
+				int bit = (n >> i) & 1;
+				if(bit) {
+					str += chr_lut[i & 0xF];
+				} else {
+					str += '-';
+				}
+			}
+			return str;
+		};
+
+		auto& mem = emu()->mem;
+		auto& io = mem.m_io;
 		const auto rombank = mem.rombank_current();
-		const int ly = mem.m_io.m_LY;
+		const int ly = io.m_LY;
 		std::printf("last opcode: %s\n",m_curopcode_ptr->name.c_str());
 		std::printf("CPU: %04Xh[+%4Xh]\n",m_PC,m_SP);
 		std::printf("ROM: %02Xh\n",rombank);
 		std::printf("\tAF:   $%04X LY:   %3d\n",reg_af(),ly);
-		std::printf("\tBC:   $%04X LCDC: $%02X\n",reg_bc(),mem.m_io.m_LCDC);
-		std::printf("\tDE:   $%04X IE:   %d\n",reg_de(),mem.m_io.m_IE);
-		std::printf("\tHL:   $%04X IF:   %d\n",reg_hl(),mem.m_io.m_IF);
-		std::printf("\tSTAT: $%04X IME:  %d\n",mem.m_io.m_STAT,m_regIME);
-		std::printf("\tDC:    %4d DIV:   $%02X\n",m_dotclock,mem.m_io.m_DIV);
+		std::printf("\tBC:   $%04X LCDC: $%02X\n",reg_bc(),io.m_LCDC);
+		std::printf("\tDE:   $%04X IE:   %s\n",reg_de(),tostr_bin(io.m_IE).c_str());
+		std::printf("\tHL:   $%04X IF:   %s\n",reg_hl(),tostr_bin(io.m_IF).c_str());
+		std::printf("\tSTAT: $%04X IME:  %d\n",io.m_STAT,m_regIME);
+		std::printf("\tDC:    %4d DIV:   $%02X\n",m_dotclock,io.m_DIV);
 
 		if(instr_history) {
 			for(int i=0; i<m_instrhistory.size(); i++) {
@@ -1733,7 +1767,8 @@ namespace fern {
 				auto &mem = emu()->mem;
 				// 4 dots per cycle
 				if(mem.m_io.ppu_enabled()) {
-					m_dotclock += (wait_cycles*4);
+					int mul = speed_doubled() ? 2 : 4;
+					m_dotclock += (wait_cycles*mul);
 				}
 
 				// set current mode
@@ -1777,6 +1812,7 @@ namespace fern {
 				if(!mem.m_io.ppu_enabled()) {
 					mem.m_io.m_LY = 0;
 					m_dotclock = 0;
+					mem.m_io.stat_setMode(0);
 				}
 
 				mem.stat_lycSync();

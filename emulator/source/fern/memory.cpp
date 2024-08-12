@@ -155,6 +155,7 @@ namespace fern {
 				case 0x13: return m_io.m_NR13;
 				case 0x14: return m_io.m_NR14 & (1<<6);
 				case 0x15: return 0x00; // ponkotsutank reads it...
+				case 0x1A: return m_io.m_NR30;
 				case 0x20: return m_io.m_NR41;
 				case 0x21: return m_io.m_NR42;
 				case 0x22: return m_io.m_NR43;
@@ -170,6 +171,7 @@ namespace fern {
 				case 0x47: return m_io.m_BGP;
 				case 0x4A: return m_io.m_WY;
 				case 0x4B: return m_io.m_WX;
+				case 0x4D: return m_io.m_KEY1;
 				case 0x4F: return m_io.m_VBK;
 				// misc ---------------------------------@/
 				case 0x70: return m_io.m_SVBK;
@@ -252,14 +254,12 @@ namespace fern {
 	auto CMem::write_vram(int addr,int data) -> void {
 		addr &= 0x1FFF;
 
-		if(vram_accessible()) {
-			addr += KBSIZE(8) * m_io.m_VBK;
-			m_vram[addr] = data;
-		} else {
+		if(!vram_accessible()) return;
+		addr += KBSIZE(8) * m_io.m_VBK;
+		m_vram[addr] = data;
 		//	std::printf("attempt to write to vram in mode 3 (%04Xh)\n",addr);
 		//	emu()->cpu.print_status();
 		//	std::exit(-1);
-		}
 	}
 	auto CMem::write_hram(int addr,int data) -> void {
 		addr &= 0xFF;
@@ -291,7 +291,7 @@ namespace fern {
 					break;
 				}
 				case 0x01: { // SB
-					std::printf("warning: unimplemented link cable write ($%02X)\n",data);
+					//std::printf("warning: unimplemented link cable write ($%02X)\n",data);
 					m_io.m_SB = data;
 					break;
 				}
@@ -467,9 +467,17 @@ namespace fern {
 					// output addr: $FE00
 					// length: $A0
 					int src_addr = (data<<8);
-					for(int i=0; i<0xA0; i++) {
-						m_oam[i] = read(src_addr + i);
-						emu()->cpu.clock_tick(1);
+					if(!emu()->cpu.speed_doubled()) {
+						for(int i=0; i<0xA0; i++) {
+							m_oam[i] = read(src_addr + i);
+							emu()->cpu.clock_tick(1);
+						}
+					} else {
+						for(int i=0; i<0xA0; i += 2) {
+							m_oam[i] = read(src_addr + i);
+							m_oam[i+1] = read(src_addr + i + 1);
+							emu()->cpu.clock_tick(1);
+						}
 					}
 					break;
 				}
@@ -494,6 +502,14 @@ namespace fern {
 					break;
 				}
 				
+				case 0x4D: { // KEY1
+					if(emu()->cgb_enabled()) {
+						m_io.m_KEY1 = (m_io.m_KEY1 & BIT(7)) | (data & 1);
+					} else {
+						warn_cgb_reg("VBK",data);
+					}
+					break;
+				}
 				case 0x4F: { // VBK
 					if(emu()->cgb_enabled()) {
 						m_io.m_VBK = data & 1;
@@ -538,9 +554,10 @@ namespace fern {
 				}
 				case 0x55: { // HDMA5
 					if(emu()->cgb_enabled()) {
-						m_io.m_HDMA5 = data;
+						auto& cpu = emu()->cpu;
 						const bool is_general = (data & RFlagHDMA::hblank) == 0;
 						const int block_count = (data & 0x7F) + 1;
+						const int wait_time = cpu.speed_doubled() ? 16 : 8;
 
 						if(is_general) {
 							auto addr_src = m_io.hdma_getSource();
@@ -548,14 +565,16 @@ namespace fern {
 
 							for(int y=0; y<block_count; y++) {
 								for(int x=0; x<0x10; x++) {
-									write(addr_out,read(addr_src));
+									write_vram(addr_out,read(addr_src));
 									addr_out++;
 									addr_src++;
 								}
+								cpu.clock_tick(wait_time);
 							}
+							m_io.m_HDMA5 = 0xFF;
 						} else {
 							std::printf("hblank dma unimplemented...\n");
-							emu()->cpu.print_status();
+							cpu.print_status();
 							std::exit(-1);
 						}
 					} else {
@@ -566,9 +585,7 @@ namespace fern {
 				
 				case 0x68: { // BGPI
 					if(emu()->cgb_enabled()) {
-						std::puts("CGB palettes unimplemented");
-						std::exit(-1);
-						//m_io.m_BGPI = data & 0b111;
+						m_io.m_BGPI = data & (0x3F | RFlagPalet::autoincr);
 					} else {
 						warn_cgb_reg("BGPI",data);
 					}
@@ -576,9 +593,13 @@ namespace fern {
 				}
 				case 0x69: { // BGPD
 					if(emu()->cgb_enabled()) {
-						std::puts("CGB palettes unimplemented");
-						std::exit(-1);
-						//m_io.m_BGPD = data & 0b111;
+						int index = m_io.bgpal_index();
+						
+						m_paletBG[index] = data;
+						
+						index += (m_io.m_BGPI & RFlagPalet::autoincr) ? 1 : 0;
+						index &= 0x3F;
+						m_io.m_BGPI = (m_io.m_BGPI & RFlagPalet::autoincr) | index;
 					} else {
 						warn_cgb_reg("BGPD",data);
 					}
@@ -586,9 +607,7 @@ namespace fern {
 				}
 				case 0x6A: { // OBPI
 					if(emu()->cgb_enabled()) {
-						std::puts("CGB palettes unimplemented");
-						std::exit(-1);
-						//m_io.m_OBPI = data & 0b111;
+						m_io.m_OBPI = data & (0x3F | RFlagPalet::autoincr);
 					} else {
 						warn_cgb_reg("OBPI",data);
 					}
@@ -596,9 +615,13 @@ namespace fern {
 				}
 				case 0x6B: { // OBPD
 					if(emu()->cgb_enabled()) {
-						std::puts("CGB palettes unimplemented");
-						std::exit(-1);
-						//m_io.m_OBPD = data & 0b111;
+						int index = m_io.objpal_index();
+						
+						m_paletObj[index] = data;
+						
+						index += (m_io.m_OBPI & RFlagPalet::autoincr) ? 1 : 0;
+						index &= 0x3F;
+						m_io.m_OBPI = (m_io.m_OBPI & RFlagPalet::autoincr) | index;
 					} else {
 						warn_cgb_reg("OBPD",data);
 					}
@@ -813,7 +836,7 @@ namespace fern {
 			// RAM enable -------------------------------@/
 			case 0: {
 				if(data == 0xA) {
-					std::puts("mbc: RAM enabled");
+					//std::puts("mbc: RAM enabled");
 					m_ramEnabled = true;
 				} else {
 					m_ramEnabled = false;

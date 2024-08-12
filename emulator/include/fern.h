@@ -28,6 +28,11 @@ namespace fern {
 	constexpr int KBSIZE(int n) { return 1024 * n; }
 	constexpr int MBSIZE(int n) { return KBSIZE(1024) * n; }
 
+	namespace RFlagMapAttrib {
+		constexpr auto bank(int attr) -> int { return (attr>>3)&1; }
+		constexpr auto flipX(int attr) -> int { return (attr>>5)&1; }
+		constexpr auto flipY(int attr) -> int { return (attr>>6)&1; }
+	};
 	namespace RFlagPalet {
 		enum {
 			autoincr = 0x80
@@ -271,22 +276,26 @@ namespace fern {
 		// 40h
 		int m_LCDC;
 		int m_STAT;
-		int m_SCY;
-		int m_SCX;
+		int m_SCY,m_SCX;
 
 		int m_LY;
 		int m_LYC;
 		int m_BGP;
 		int m_OBP[2];
-		int m_WY;
-		int m_WX;
+		int m_WY,m_WX;
 
 		int m_VBK;
 		int m_SVBK;
 
+		int m_KEY1;
+
 		// 50h
 		int m_HDMA1,m_HDMA2,m_HDMA3,m_HDMA4;
 		int m_HDMA5;
+		
+		// 60h
+		int m_BGPI,m_BGPD;
+		int m_OBPI,m_OBPD;
 
 		auto ppu_enabled() const -> bool {
 			return (m_LCDC & 0x80) != 0;
@@ -312,6 +321,11 @@ namespace fern {
 		constexpr auto hdma_getOutput() const -> int {
 			return m_HDMA4 | (m_HDMA3<<8);
 		}
+		constexpr auto palreg_index(const int& reg) const -> int {
+			return reg & 0x3F;
+		}
+		constexpr auto bgpal_index() const -> int { return palreg_index(m_BGPI); }
+		constexpr auto objpal_index() const -> int { return palreg_index(m_OBPI); }
 	};
 	class CMem : public CEmulatorComponent {
 		public:
@@ -413,6 +427,7 @@ namespace fern {
 			std::array<CCPUInstr,0x100> m_opcodetable;
 			std::array<CCPUInstrPfx,0x10> m_opcodetable_pfx;
 		public:
+			bool m_speedDoubled;
 			bool m_should_enableIME;
 			bool m_regIME;
 			bool m_haltwaiting;
@@ -439,6 +454,8 @@ namespace fern {
 
 			constexpr auto pc_set(std::size_t addr) { m_PC = addr; }
 			constexpr auto pc_increment(std::size_t offset) { m_PC += offset; }
+
+			constexpr auto speed_doubled() -> bool { return m_speedDoubled; }
 
 			auto instrhistory_get(int index) -> CInstrHistoryData;
 			auto instrhistory_push(int bank, int pc, const std::vector<int>& opcodedata) -> void;

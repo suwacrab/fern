@@ -219,6 +219,7 @@ namespace fern {
 		int cgb_flag = rom_vec.at(0x143);
 		if( (cgb_flag == 0x80) || (cgb_flag == 0xC0) ) {
 			m_cgbEnabled = true;
+			std::puts("CGB mode!");
 		} else if(cgb_flag == 0x00) {
 			m_cgbEnabled = false;
 		} else {
@@ -293,6 +294,11 @@ namespace fern {
 			}
 
 			std::fclose(fsvfile);
+		}
+
+		// setup CGB stuff
+		if(cgb_enabled()) {
+			cpu.m_regA = 0x11;
 		}
 	}
 }
