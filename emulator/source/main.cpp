@@ -74,6 +74,7 @@ int main(int argc,const char *argv[]) {
 	fern::CEmuInitFlags flags;
 	flags.debug = flag_debug;
 	flags.vsync = flag_vsync;
+	flags.verbose = flag_verbose;
 
 	auto emu = std::make_shared<fern::CEmulator>(&flags);
 	emu->load_romfile(filename_rom);

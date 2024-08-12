@@ -1,14 +1,16 @@
 # compiler
 CXX	:= clang++
 
-LIBFLAGS := -static-libstdc++ -static-libgcc
-LIBS := -lmingw32
-LIBS += -lSDL2main -lSDL2
-LIBS += -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive
+LIBFLAGS := -static
+LIBS := -lmingw32 -lSDL2
+LIBS += -Wl,--dynamicbase -Wl,--nxcompat -Wl,--high-entropy-va -lm -ldinput8 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lshell32 -lsetupapi -lversion -luuid
+# ^ should always be last
+
+# static linking:  https://stackoverflow.com/questions/72163357/sdl-mingw-static-lib-linking-errors
 
 CFLAGS := -Wall -Wshadow -Iinclude
 CFLAGS += -O3
-CFLAGS += -MD
+CFLAGS += -MMD -MP
 #CFLAGS += -m32 # 32-bit program, for the 10% that aren't on x64
 #CFLAGS += -MMD # オブジェクトファイルの依存関係を*.dに出力する
 #CFLAGS += -MP # ヘッダファイルに依存関係がないとして依存関係を出力する
@@ -24,6 +26,7 @@ DEPS := $(OBJS:.o=.d)
 
 -include $(DEPS)
 
+.PHONY: clean
 all: $(OUTPUT)
 
 # building

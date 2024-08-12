@@ -26,6 +26,17 @@ namespace fern {
 	constexpr int KBSIZE(int n) { return 1024 * n; }
 	constexpr int MBSIZE(int n) { return KBSIZE(1024) * n; }
 
+	namespace RFlagPalet {
+		enum {
+			autoincr = 0x80
+		};
+	}
+	namespace RFlagHDMA {
+		enum {
+			general = 0,
+			hblank = 0x80
+		};
+	}
 	namespace RFlagLCDC {
 		enum {
 			bgon = 0x01,
@@ -38,7 +49,6 @@ namespace fern {
 			lcdon = 0x80
 		};
 	}
-
 	namespace RFlagSTAT {
 		enum {
 			mode0int = 0x08,
@@ -47,7 +57,6 @@ namespace fern {
 			lycint = 0x40	
 		};
 	}
-
 	namespace RFlagIF {
 		enum {
 			vblank = 0x01,
@@ -99,6 +108,8 @@ namespace fern {
 		CColor() : r(0),g(0),b(0) {}
 		CColor(int alpha) : a(alpha),r(0),g(0),b(0) {}
 		CColor(int p_r, int p_g, int p_b) : a(255),r(p_r),g(p_g),b(p_b) {}
+
+		static auto from_rgb15(int clrdat) -> CColor;
 	};
 	class CScreen {
 		private:
@@ -134,6 +145,8 @@ namespace fern {
 
 			auto present() -> void;
 			auto draw_line(int draw_y) -> void;
+			auto draw_lineDMG(int draw_y) -> void;
+			auto draw_lineCGB(int draw_y) -> void;
 
 			constexpr auto vsync_set(bool enable) -> void { m_vsyncEnabled = enable; }
 			constexpr auto vsync_enabled() const -> bool { return m_vsyncEnabled; }
@@ -262,7 +275,12 @@ namespace fern {
 		int m_WY;
 		int m_WX;
 
+		int m_VBK;
 		int m_SVBK;
+
+		// 50h
+		int m_HDMA1,m_HDMA2,m_HDMA3,m_HDMA4;
+		int m_HDMA5;
 
 		auto ppu_enabled() const -> bool {
 			return (m_LCDC & 0x80) != 0;
@@ -282,6 +300,12 @@ namespace fern {
 		auto stat_lycSame() const -> bool {
 			return (m_STAT & 0x04) != 0;
 		}
+		constexpr auto hdma_getSource() const -> int {
+			return m_HDMA2 | (m_HDMA1<<8);
+		}
+		constexpr auto hdma_getOutput() const -> int {
+			return m_HDMA4 | (m_HDMA3<<8);
+		}
 	};
 	class CMem : public CEmulatorComponent {
 		public:
@@ -290,6 +314,8 @@ namespace fern {
 			std::array<uint8_t,8 * KBSIZE(4)> m_wram; // 8x4kib
 			std::array<uint8_t,160> m_oam; // 4*40b
 			std::array<uint8_t,128> m_hram; // 128b
+			std::array<uint8_t,64> m_paletObj;
+			std::array<uint8_t,64> m_paletBG;
 			CMemIO m_io;
 			std::array<CRomBank,256> m_rombanks;
 
@@ -324,7 +350,9 @@ namespace fern {
 			}
 			auto read(size_t addr) -> uint32_t;
 			auto read_hram(int addr) -> uint32_t;
+			auto read_wram(int addr) -> int;
 			auto write(size_t addr, int data) -> void;
+			auto write_wram(int addr,int data) -> void;
 			auto write_hram(int addr,int data) -> void;
 			auto write_vram(int addr,int data) -> void;
 
@@ -491,9 +519,10 @@ namespace fern {
 	struct CEmuInitFlags {
 		bool vsync;
 		bool debug;
+		bool verbose;
 
 		CEmuInitFlags()
-			: vsync(false),debug(false)
+			: vsync(false),debug(false),verbose(false)
 			{}
 	};
 	

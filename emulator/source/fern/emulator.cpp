@@ -2,13 +2,7 @@
 #include <vector>
 #include <iostream>
 
-#include <conio.h>
-
 #include <SDL2/SDL.h>
-
-static void wait_getch() {
-	getch();
-}
 
 namespace fern {
 	CEmulator::CEmulator(const CEmuInitFlags* flags) {
@@ -29,9 +23,12 @@ namespace fern {
 		if( SDL_Init( SDL_INIT_VIDEO ) < 0 )
 		{
 			std::printf( "SDL could not initialize! SDL_Error: %s\n", SDL_GetError() );
+			std::exit(-1);
 		}
 
-		renderer.window_create(flags->vsync);
+		std::atexit(SDL_Quit);
+	//	renderer.window_create(flags->vsync);
+		renderer.window_create(true);
 	}
 
 	auto CEmulator::savedata_getFilename() -> std::string {

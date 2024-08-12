@@ -3,6 +3,15 @@
 #include <SDL2/SDL.h>
 
 namespace fern {
+	// color --------------------------------------------@/
+	auto CColor::from_rgb15(int clrdat) -> CColor {
+		int r = (clrdat) & 31;
+		int g = (clrdat >> 5) & 31;
+		int b = (clrdat >> 10) & 31;
+		return CColor(r<<3,g<<3,b<<3);
+	}
+
+	// renderer -----------------------------------------@/
 	CRenderer::CRenderer() 
 	: m_screen(fern::SCREEN_X,144) {
 		m_timeLastFrame = 0;
@@ -21,6 +30,7 @@ namespace fern {
 			fern::SCREEN_X,fern::SCREEN_Y,
 			0
 		);
+		SDL_SetWindowTitle(m_window,"fern");
 		
 		// create renderer based on vsync enable
 		if(!vsync_enabled()) {
@@ -35,10 +45,13 @@ namespace fern {
 					| SDL_RENDERER_PRESENTVSYNC
 			);
 		}
+
+		// create other window for debug
+		
 	}
 
 	auto CRenderer::present() -> void {
-		SDL_RenderClear(m_renderer);
+		/*SDL_RenderClear(m_renderer);
 		for(int y=0; y<m_screen.height(); y++) {
 			for(int x=0; x<m_screen.width(); x++) {
 				const auto color = m_screen.dot_access(x,y);
@@ -46,14 +59,106 @@ namespace fern {
 				SDL_RenderDrawPoint(m_renderer,x,y);
 			}
 		}
-		SDL_RenderPresent(m_renderer);
-		if(!vsync_enabled()) {
-			// busy wait for next frame...
-			while(SDL_GetTicks() - m_timeLastFrame < (1000 / 60));
-			m_timeLastFrame = SDL_GetTicks();
+		SDL_RenderPresent(m_renderer);*/
+		auto surface = SDL_GetWindowSurface(m_window);
+		SDL_LockSurface(surface);
+		auto surface_bmp = static_cast<uint8_t*>(surface->pixels); {
+			for(int y=0; y<m_screen.height(); y++) {
+				auto row = surface_bmp + (y * surface->pitch);
+				for(int x=0; x<m_screen.width(); x++) {
+					const auto color = m_screen.dot_access(x,y);
+					row[4*x + 0] = color.b;
+					row[4*x + 1] = color.g;
+					row[4*x + 2] = color.r;
+				}
+			}
 		}
+		SDL_UnlockSurface(surface);
+
+		if(!vsync_enabled()) {
+			SDL_Delay(16);
+			// busy wait for next frame...
+		//	while(SDL_GetTicks() - m_timeLastFrame < (1000 / 60));
+		//	m_timeLastFrame = SDL_GetTicks();
+		} else {
+			SDL_RenderClear(m_renderer);
+			SDL_RenderPresent(m_renderer);
+		}
+
+		SDL_UpdateWindowSurface(m_window);
 	}
 	auto CRenderer::draw_line(int draw_y) -> void {
+		if(emu()->cgb_enabled()) {
+			draw_lineCGB(draw_y);
+		} else {
+			draw_lineDMG(draw_y);
+		}
+	}
+
+	auto CRenderer::draw_lineCGB(int draw_y) -> void {
+		if(draw_y < 0 || draw_y >= 144) return;
+
+		const std::array<fern::CColor,4> palet_gray = {
+			fern::CColor(255,255,255),
+			fern::CColor(192,192,192),
+			fern::CColor(112,112,112),
+			fern::CColor(12,12,12)
+		};
+
+		auto& mem = emu()->mem;
+		const int lcdc = mem.m_io.m_LCDC;
+		std::array<char,fern::SCREEN_X> bg_linebuffer;
+		//std::array<char,fern::SCREEN_X> obj_linebuffer;
+
+		// draw backplane, if lcd's off -----------------@/
+		if(!(lcdc & RFlagLCDC::lcdon)) {
+			const auto color = fern::CColor(0,255,0);
+			for(int i=0; i<fern::SCREEN_X; i++) {
+				m_screen.dot_access(i,draw_y) = color;
+			}
+			return;
+		}
+
+		// draw background ------------------------------@/
+		{
+			const int bgscroll_x = mem.m_io.m_SCX;
+			const int bgscroll_y = mem.m_io.m_SCY;
+			
+			const int fetch_y = (bgscroll_y + draw_y) & 0xFF;
+			size_t addr_chrbase = 0x0800;
+			size_t addr_mapbase = 0x1800;
+			if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
+			if(lcdc & RFlagLCDC::map9C00) addr_mapbase += 0x0400;
+			const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
+
+			for(int draw_x=0; draw_x<fern::SCREEN_X; draw_x++) {
+				int dot = 0;
+				if(lcdc & RFlagLCDC::bgon) {
+					int fetch_x = (bgscroll_x + draw_x) & 0xFF;
+					// fetch tile
+					int tile = 0;
+					if(lcdc & RFlagLCDC::chr8000) {
+						tile = mem.m_vram.at(addr_mapline + (fetch_x/8));
+					} else {
+						tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (fetch_x/8)));
+						tile = (tile + 0x80) & 0xFF;
+					}
+					int tileaddr = addr_chrbase + tile * 0x10;
+					// get pixel
+					tileaddr += (fetch_y&7)*2;
+					int lineA = mem.m_vram[tileaddr];
+					int lineB = mem.m_vram[tileaddr+1];
+					int dotA = (lineA >> (7-(fetch_x&7))) & 1;
+					int dotB = (lineB >> (7-(fetch_x&7))) & 1;
+					dot = dotA | (dotB<<1);
+				} 
+			//	m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
+				m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
+				bg_linebuffer[draw_x] = dot;
+			}
+		}
+	}
+	auto CRenderer::draw_lineDMG(int draw_y) -> void {
 		if(draw_y < 0 || draw_y >= 144) return;
 		/*const fern::CColor palet_gray[4] = {
 			fern::CColor(255,255,255),
@@ -92,6 +197,7 @@ namespace fern {
 			for(int i=0; i<fern::SCREEN_X; i++) {
 				m_screen.dot_access(i,draw_y) = color;
 			}
+			return;
 		}
 
 		// draw background ------------------------------@/

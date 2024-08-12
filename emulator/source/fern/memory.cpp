@@ -79,13 +79,9 @@ namespace fern {
 			else if(addr_hi >= 0xA0 && addr_hi <= 0xBF) {
 				return m_mapper->read_sram(addr & 0x1FFF);
 			} 
-			// $C000-$CFFF : WRAM bank0
-			else if(addr_hi >= 0xC0 && addr_hi <= 0xCF) {
-				return m_wram.at(addr & 0x0FFF);
-			}
-			// $D000-$DFFF : WRAM bank1-7
+			// $C000-$DFFF : WRAM
 			else if(addr_hi >= 0xC0 && addr_hi <= 0xDF) {
-				return m_wram.at(4*1024 + (addr & 0x0FFF));
+				return read_wram(addr & 0x1FFF);
 			}
 			// $E000-$FDFF : HRAM
 			else if(addr_hi >= 0xE0 && addr_hi <= 0xFD) {
@@ -108,6 +104,17 @@ namespace fern {
 				std::exit(-1);
 			}
 		}
+	}
+	auto CMem::read_wram(int addr) -> int {
+		addr &= 0x1FFF;
+
+		if(addr >= 0x1000 && emu()->cgb_enabled()) {
+			int wrambank = m_io.m_SVBK;
+			if(wrambank == 0) wrambank = 1;
+			addr &= 0xFFF;
+			addr += KBSIZE(4) * wrambank;
+		}
+		return m_wram.at(addr);
 	}
 	auto CMem::read_hram(int addr) -> uint32_t {
 		addr &= 0xFF;
@@ -152,6 +159,7 @@ namespace fern {
 				case 0x21: return m_io.m_NR42;
 				case 0x22: return m_io.m_NR43;
 				case 0x24: return m_io.m_NR50;
+				case 0x26: return m_io.m_NR52;
 				case 0x19: return m_io.m_NR24 & (1<<6);
 				case 0x1E: return m_io.m_NR34 & (1<<6);
 				case 0x23: return m_io.m_NR44 & (1<<6);
@@ -162,6 +170,9 @@ namespace fern {
 				case 0x47: return m_io.m_BGP;
 				case 0x4A: return m_io.m_WY;
 				case 0x4B: return m_io.m_WX;
+				case 0x4F: return m_io.m_VBK;
+				// misc ---------------------------------@/
+				case 0x70: return m_io.m_SVBK;
 				// unknown ------------------------------@/
 				default: {
 					std::printf("unimplemented: IO read (%02Xh)\n",addr);
@@ -193,11 +204,11 @@ namespace fern {
 			} 
 			// WRAM
 			else if(addr_hi >= 0xC0 && addr_hi <= 0xDF) {
-				m_wram[addr & 0x1FFF] = data;
+				write_wram(addr & 0x1FFF,data);
 			}
 			// echo RAM
 			else if(addr_hi >= 0xE0 && addr_hi <= 0xFD) {
-				m_wram[addr & 0x1FFF] = data;
+				write_wram(addr & 0x1FFF,data);
 			}
 			// OAM
 			else if(addr_hi == 0xFE) {
@@ -226,10 +237,23 @@ namespace fern {
 			}
 		}	
 	}
+	auto CMem::write_wram(int addr,int data) -> void {
+		data &= 0xFF;
+		addr &= 0x1FFF;
+
+		if(addr >= 0x1000 && emu()->cgb_enabled()) {
+			int wrambank = m_io.m_SVBK;
+			if(wrambank == 0) wrambank = 1;
+			addr &= 0xFFF;
+			addr += KBSIZE(4) * wrambank;
+		}
+		m_wram[addr] = data;
+	}
 	auto CMem::write_vram(int addr,int data) -> void {
 		addr &= 0x1FFF;
 
 		if(vram_accessible()) {
+			addr += KBSIZE(8) * m_io.m_VBK;
 			m_vram[addr] = data;
 		} else {
 		//	std::printf("attempt to write to vram in mode 3 (%04Xh)\n",addr);
@@ -470,7 +494,76 @@ namespace fern {
 					break;
 				}
 				
+				case 0x4F: { // VBK
+					if(emu()->cgb_enabled()) {
+						m_io.m_VBK = data & 1;
+					} else {
+						warn_cgb_reg("VBK",data);
+					}
+					break;
+				}
+				
 				// CGB? ---------------------------------@/
+				case 0x51: { // HDMA1
+					if(emu()->cgb_enabled()) {
+						m_io.m_HDMA1 = data;
+					} else {
+						warn_cgb_reg("HDMA1",data);
+					}
+					break;
+				}
+				case 0x52: { // HDMA2
+					if(emu()->cgb_enabled()) {
+						m_io.m_HDMA2 = data;
+					} else {
+						warn_cgb_reg("HDMA2",data);
+					}
+					break;
+				}
+				case 0x53: { // HDMA3
+					if(emu()->cgb_enabled()) {
+						m_io.m_HDMA3 = data & 0x1F;
+					} else {
+						warn_cgb_reg("HDMA3",data);
+					}
+					break;
+				}
+				case 0x54: { // HDMA4
+					if(emu()->cgb_enabled()) {
+						m_io.m_HDMA4 = data & 0xF0;
+					} else {
+						warn_cgb_reg("HDMA4",data);
+					}
+					break;
+				}
+				case 0x55: { // HDMA5
+					if(emu()->cgb_enabled()) {
+						m_io.m_HDMA5 = data;
+						const bool is_general = (data & RFlagHDMA::hblank) == 0;
+						const int block_count = (data & 0x7F) + 1;
+
+						if(is_general) {
+							auto addr_src = m_io.hdma_getSource();
+							auto addr_out = m_io.hdma_getOutput();
+
+							for(int y=0; y<block_count; y++) {
+								for(int x=0; x<0x10; x++) {
+									write(addr_out,read(addr_src));
+									addr_out++;
+									addr_src++;
+								}
+							}
+						} else {
+							std::printf("hblank dma unimplemented...\n");
+							emu()->cpu.print_status();
+							std::exit(-1);
+						}
+					} else {
+						warn_cgb_reg("HDMA5",data);
+					}
+					break;
+				}
+				
 				case 0x68: { // BGPI
 					if(emu()->cgb_enabled()) {
 						std::puts("CGB palettes unimplemented");

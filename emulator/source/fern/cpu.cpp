@@ -1813,7 +1813,7 @@ namespace fern {
 
 				// tick timers --------------------------@/
 				m_timerctrDiv += wait_cycles;
-				if(m_timerctrDiv >= 64) {
+				while(m_timerctrDiv >= 64) {
 					m_timerctrDiv -= 64;
 					mem.m_io.m_DIV += 1;
 				}
