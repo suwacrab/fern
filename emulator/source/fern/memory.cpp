@@ -156,6 +156,7 @@ namespace fern {
 				case 0x14: return m_io.m_NR14 & (1<<6);
 				case 0x15: return 0x00; // ponkotsutank reads it...
 				case 0x1A: return m_io.m_NR30;
+				case 0x1B: return 0;
 				case 0x20: return m_io.m_NR41;
 				case 0x21: return m_io.m_NR42;
 				case 0x22: return m_io.m_NR43;
@@ -172,7 +173,7 @@ namespace fern {
 				case 0x4A: return m_io.m_WY;
 				case 0x4B: return m_io.m_WX;
 				case 0x4D: return m_io.m_KEY1;
-				case 0x4F: return m_io.m_VBK;
+				case 0x4F: return m_io.m_VBK | 0xFE;
 				// misc ---------------------------------@/
 				case 0x70: return m_io.m_SVBK;
 				// unknown ------------------------------@/
@@ -253,6 +254,7 @@ namespace fern {
 	}
 	auto CMem::write_vram(int addr,int data) -> void {
 		addr &= 0x1FFF;
+		data &= 0xFF;
 
 		if(!vram_accessible()) return;
 		addr += KBSIZE(8) * m_io.m_VBK;
@@ -506,7 +508,7 @@ namespace fern {
 					if(emu()->cgb_enabled()) {
 						m_io.m_KEY1 = (m_io.m_KEY1 & BIT(7)) | (data & 1);
 					} else {
-						warn_cgb_reg("VBK",data);
+						warn_cgb_reg("KEY1",data);
 					}
 					break;
 				}
@@ -563,9 +565,13 @@ namespace fern {
 							auto addr_src = m_io.hdma_getSource();
 							auto addr_out = m_io.hdma_getOutput();
 
+							std::printf("hdma transfer ($%04X,$%04X,$%02X)\n",
+								addr_src,addr_out,block_count
+							);
 							for(int y=0; y<block_count; y++) {
 								for(int x=0; x<0x10; x++) {
-									write_vram(addr_out,read(addr_src));
+									int data = read(addr_src);
+									write_vram(addr_out & 0x1FFF,data);
 									addr_out++;
 									addr_src++;
 								}
@@ -633,7 +639,9 @@ namespace fern {
 				}
 				case 0x70: { // SVBK
 					if(emu()->cgb_enabled()) {
-						m_io.m_SVBK = data & 0b111;
+						int bank = data & 0b111;
+						if(bank == 0) bank = 1;
+						m_io.m_SVBK = bank;
 					} else {
 						warn_cgb_reg("SVBK",data);
 						emu()->cpu.print_status();

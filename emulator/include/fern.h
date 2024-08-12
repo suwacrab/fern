@@ -359,11 +359,12 @@ namespace fern {
 			auto oam_accessible() -> bool {
 				return ((m_io.stat_getMode()&1) == 0)
 					|| (!m_io.ppu_enabled())
-					|| (m_io.m_LY >= 144);
+					|| (m_io.m_LY >= fern::SCREEN_Y);
 			}
 			auto vram_accessible() -> bool {
 				return (m_io.stat_getMode() != 3)
-					|| (!m_io.ppu_enabled());
+					|| (!m_io.ppu_enabled())
+					|| (m_io.m_LY >= fern::SCREEN_Y);
 			}
 			auto addr_inRange(size_t addr, size_t min,size_t max) -> bool {
 				return (addr >= min) && (addr < max);
