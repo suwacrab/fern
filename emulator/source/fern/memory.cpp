@@ -428,8 +428,9 @@ namespace fern {
 				}
 				// video --------------------------------@/
 				case 0x40: { // LCDC
-					if(!m_io.ppu_enabled() && (data & 0x80)) {
-						emu()->cpu.m_dotclock = 0;
+					if(!m_io.ppu_enabled() && (data & BIT(7))) {
+						m_io.m_LY = 0;
+						emu()->cpu.dotclock_reset();
 						emu()->cpu.m_lycCooldown = true;
 						emu()->renderer.present();
 					}
@@ -455,9 +456,7 @@ namespace fern {
 					break;
 				}
 				case 0x44: { // LY
-					emu()->cpu.m_lycCooldown = true;
-					emu()->cpu.m_dotclock = 0;
-					m_io.m_LY = data;
+					std::printf("LY write? (%d)\n",data);
 					break;
 				}
 				case 0x45: { // LYC
@@ -570,8 +569,8 @@ namespace fern {
 							);
 							for(int y=0; y<block_count; y++) {
 								for(int x=0; x<0x10; x++) {
-									int data = read(addr_src);
-									write_vram(addr_out & 0x1FFF,data);
+									int readdata = read(addr_src);
+									write_vram(addr_out & 0x1FFF,readdata);
 									addr_out++;
 									addr_src++;
 								}

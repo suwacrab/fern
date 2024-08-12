@@ -1533,7 +1533,7 @@ namespace fern {
 		m_PC = 0x0100;
 		m_SP = 0xFFFE;
 
-		m_dotclock = 0;
+		dotclock_reset(); // start in mode 2
 		m_clockWaiting = false;
 		m_clockWaitBuffer = std::stack<int>();
 
@@ -1550,6 +1550,12 @@ namespace fern {
 		for(int i=0; i<4; i++) {
 			m_instrhistory.push_back(CInstrHistoryData());
 		}
+	}
+
+	auto CCPU::dotclock_reset() -> void {
+		m_dotclock = 0;
+		m_dotclockLimit = 204;
+		m_dotclockMode = 0;
 	}
 
 	// instruction history ------------------------------@/
@@ -1788,14 +1794,57 @@ namespace fern {
 				// set current mode
 				// mode 2: OAM scan (0-79?) (no OAM)
 				// mode 3: OAM draw (no OAM/VRAM)
-				// mode 1: vblank (all accessible)
 				// mode 0: hblank (all accessible)
+				// mode 1: vblank (all accessible)
+				// modes go from 2 -> 3 -> 0 every visible scanline, then
+				// mode 1 for lines 144 onwards.
 				bool do_drawline = false;
 				auto old_scanline = mem.m_io.m_LY;
 				int old_mode = mem.m_io.stat_getMode();
 				bool did_vblStart = false;
 				bool do_flipscreen = false;
 
+				if(m_dotclock >= m_dotclockLimit) {
+					m_dotclock -= m_dotclockLimit;
+
+					if(m_dotclockMode == 0 || m_dotclockMode == 1) {
+						mem.m_io.m_LY += 1;
+						if(mem.m_io.m_LY > 153) {
+							mem.m_io.m_LY = 0;
+						}
+						did_vblStart = (mem.m_io.m_LY == fern::SCREEN_Y);
+						//did_vblStart = (mem.m_io.m_LY == 0);
+						do_flipscreen = did_vblStart;
+
+						do_drawline = true;
+						m_lycCooldown = true;
+						if(m_dotclockMode == 0 || mem.m_io.m_LY < fern::SCREEN_Y) {
+							// continue in mode 2 if vblank period not reached
+							m_dotclockMode = 2;
+							m_dotclockLimit = 80;
+						} else {
+							m_dotclockMode = 1;
+							m_dotclockLimit = 456;
+						}
+					} else if(m_dotclockMode == 2) {
+						m_dotclockMode = 3;
+						m_dotclockLimit = 172;
+					} else {
+						m_dotclockMode = 0;
+						m_dotclockLimit = 204;
+					}
+				}
+				mem.m_io.stat_setMode(m_dotclockMode);
+
+				if(!mem.m_io.ppu_enabled()) {
+					mem.m_io.m_LY = 0;
+					m_dotclock = 0;
+					m_dotclockMode = 0;
+					m_dotclockLimit = 204;
+					mem.m_io.stat_setMode(m_dotclockMode);
+				}
+
+				/*
 				if(m_dotclock >= 456) {
 					mem.m_io.m_LY += 1;
 					if(mem.m_io.m_LY > 153) {
@@ -1827,7 +1876,7 @@ namespace fern {
 					mem.m_io.m_LY = 0;
 					m_dotclock = 0;
 					mem.m_io.stat_setMode(0);
-				}
+				}*/
 
 				mem.stat_lycSync();
 

@@ -423,6 +423,12 @@ namespace fern {
 		constexpr int opcode_num() const { return opcodedata.at(0); }
 	};
 	
+	struct CCycle {
+		int num;
+		CCycle(int n) : num(n << 8) {}
+		auto full_cycles() -> int { return num >> 8; }
+	};
+
 	class CCPU : public CEmulatorComponent {
 		private:
 			std::array<CCPUInstr,0x100> m_opcodetable;
@@ -443,6 +449,8 @@ namespace fern {
 
 			bool m_lycCooldown;
 			int m_dotclock;
+			int m_dotclockLimit;
+			int m_dotclockMode;
 			bool m_clockWaiting;
 			std::stack<int> m_clockWaitBuffer;
 
@@ -457,6 +465,8 @@ namespace fern {
 			constexpr auto pc_increment(std::size_t offset) { m_PC += offset; }
 
 			constexpr auto speed_doubled() -> bool { return m_speedDoubled; }
+
+			auto dotclock_reset() -> void;
 
 			auto instrhistory_get(int index) -> CInstrHistoryData;
 			auto instrhistory_push(int bank, int pc, const std::vector<int>& opcodedata) -> void;
