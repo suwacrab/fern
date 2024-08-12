@@ -223,7 +223,10 @@ namespace fern {
 		} else if(cgb_flag == 0x00) {
 			m_cgbEnabled = false;
 		} else {
-			std::puts("warning: ROM has unknown CGB flag. emulation may not work properly...");
+			std::printf("warning: ROM has unknown CGB flag. ($%02X) emulation may not work properly...\n",
+				cgb_flag
+			);
+			m_cgbEnabled = false;
 		}
 
 		// setup banks ----------------------------------@/
