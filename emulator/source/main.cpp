@@ -121,7 +121,7 @@ static void assert_exit(bool cond, const std::string& str) {
 }
 static void print_usage() {
 	std::puts(
-		"fern 0.4\n"
+		"fern 0.6\n"
 		"usage: fern <source rom> <options>\n"
 		"\t-vs       enable vsync\n"
 		"\t-g        enable debugger\n"
