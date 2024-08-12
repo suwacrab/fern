@@ -19,29 +19,19 @@ With that in mind, if you want to build the emulator, `lua54 build.lua clean bui
 # Usage
 
 `fern <source rom> <options>`
-
 - `-vs`: enable vsync (not recommended atm!)
-
 - `-g`: enable debugger
-
 - `-v`: verbose error/warn logging
-
 - `--help`: show help
 
 Additionally, using `fern` with no options brings up a ROM open prompt.
 
 ## Controls
-
 - Arrow keys: D-pad
-
 - A button: `S`
-
 - B button: `A`
-
 - Select: `V`
-
 - Start: `B`
-
 - Enable debugger: `G`
 
 you can exit the debugger by entering `r` in the command window.
