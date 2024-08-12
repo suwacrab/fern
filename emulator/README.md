@@ -36,3 +36,6 @@ Additionally, using `fern` with no options brings up a ROM open prompt.
 
 you can exit the debugger by entering `r` in the command window.
 
+# Other
+Supposedly should work on linux if you edit main.cpp to only use command input. If so, edit the makefile to use more sane options, since it's currently made to statically compile everything. (along with the windows libs SDL2 uses)
+
