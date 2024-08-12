@@ -40,6 +40,11 @@ namespace fern {
 		m_mapper = new CMapperMBC1(use_ram, use_battery);
 		m_mapper->assign_emu(m_emu);
 	}
+	auto CMem::mapper_setupMBC3(bool use_ram, bool use_battery, bool use_timer) -> void {
+		std::puts("created mapper");
+		m_mapper = new CMapperMBC3(use_ram, use_battery, use_timer);
+		m_mapper->assign_emu(m_emu);
+	}
 	auto CMem::mapper_setupMBC5(bool use_ram, bool use_battery, bool use_rumble) -> void {
 		std::printf("created mapper\n");
 		m_mapper = new CMapperMBC5(use_ram, use_battery, use_rumble);
@@ -150,17 +155,19 @@ namespace fern {
 				case 0x0F: return m_io.m_IF;
 				// sound --------------------------------@/
 				case 0x10: return m_io.m_NR10;
-				case 0x11: return m_io.m_NR10 & (0b11 << 6);
+				case 0x11: return m_io.m_NR11 & (0b11 << 6);
 				case 0x12: return m_io.m_NR12;
 				case 0x13: return m_io.m_NR13;
 				case 0x14: return m_io.m_NR14 & (1<<6);
 				case 0x15: return 0x00; // ponkotsutank reads it...
+				case 0x16: return m_io.m_NR21 & (0b11 << 6);
 				case 0x1A: return m_io.m_NR30;
 				case 0x1B: return 0;
 				case 0x20: return m_io.m_NR41;
 				case 0x21: return m_io.m_NR42;
 				case 0x22: return m_io.m_NR43;
 				case 0x24: return m_io.m_NR50;
+				case 0x25: return m_io.m_NR51;
 				case 0x26: return m_io.m_NR52;
 				case 0x19: return m_io.m_NR24 & (1<<6);
 				case 0x1E: return m_io.m_NR34 & (1<<6);
@@ -170,6 +177,8 @@ namespace fern {
 				case 0x41: return m_io.m_STAT;
 				case 0x44: return m_io.m_LY;
 				case 0x47: return m_io.m_BGP;
+				case 0x48: return m_io.m_OBP[0];
+				case 0x49: return m_io.m_OBP[1];
 				case 0x4A: return m_io.m_WY;
 				case 0x4B: return m_io.m_WX;
 				case 0x4D: return m_io.m_KEY1;
@@ -250,7 +259,7 @@ namespace fern {
 			addr &= 0xFFF;
 			addr += KBSIZE(4) * wrambank;
 		}
-		m_wram[addr] = data;
+		m_wram.at(addr) = data;
 	}
 	auto CMem::write_vram(int addr,int data) -> void {
 		addr &= 0x1FFF;
@@ -564,9 +573,12 @@ namespace fern {
 							auto addr_src = m_io.hdma_getSource();
 							auto addr_out = m_io.hdma_getOutput();
 
-							std::printf("hdma transfer ($%04X,$%04X,$%02X)\n",
-								addr_src,addr_out,block_count
-							);
+							if(emu()->verbose_enabled()) {
+								std::printf("hdma transfer ($%04X,$%04X,$%02X)\n",
+									addr_src,addr_out,block_count
+								);
+							}
+
 							for(int y=0; y<block_count; y++) {
 								for(int x=0; x<0x10; x++) {
 									int readdata = read(addr_src);
@@ -720,27 +732,35 @@ namespace fern {
 		if((addr>>14) == 0) {
 			return m_emu->mem.m_rombanks[0].data[addr];
 		}
+		
 		addr &= 0x3FFF;
+		
 		return m_emu->mem.m_rombanks[rombank_get()].data[addr];
 	};
 
 	auto CMapperMBC1::read_sram(size_t addr) -> uint32_t {
 		if(!m_useram) { return 0; }
-		//if(!m_usebattery) { return 0; }
-		
+
+		int banknum = 0;
+		if(m_rambankmode) {
+			banknum = m_banknum_hi;
+		}
 		addr &= 0x1FFF;
+		addr += KBSIZE(8) * banknum;
+
 		return emu()->mem.m_sram[addr];
-		//error_unimpl("true SRAM read");
 	}
 	
-	// TODO: make this good, check for banking, etc.
 	auto CMapperMBC1::write_sram(size_t addr, int data) -> void {
 		if(!m_useram) { return; }
-		//if(!m_usebattery) { return; }
+		int banknum = 0;
+		if(m_rambankmode) {
+			banknum = m_banknum_hi;
+		}
 		addr &= 0x1FFF;
+		addr += KBSIZE(8) * banknum;
 
 		emu()->mem.m_sram[addr] = data;
-		//error_unimpl("true SRAM write");
 	}
 	auto CMapperMBC1::write_rom(size_t addr, int data) -> void {
 		addr &= 0x7FFF;
@@ -799,6 +819,133 @@ namespace fern {
 		return datablob;
 	}
 
+	// MBC3 ---------------------------------------------@/
+	CMapperMBC3::CMapperMBC3(bool use_ram, bool use_battery, bool use_timer) {
+		m_rambanknum = 0;
+		m_rombanknum = 0;
+
+		m_ramEnabled = false;
+		m_rambankmode = false;
+		m_useram = use_ram;
+		m_usebattery = use_battery;
+		m_usetimer = use_timer;
+		m_sramIsRTC = false;
+
+		m_rtcReg = 0;
+		m_rtcLatchReady = false;
+		m_rtcDay = 0;
+		m_rtcSec = m_rtcMin = m_rtcHour = 0;
+	}
+	
+	auto CMapperMBC3::read_rom(size_t addr) -> uint32_t {
+		if((addr>>14) == 0) {
+			return m_emu->mem.m_rombanks[0].data[addr];
+		}
+		addr &= 0x3FFF;
+		return m_emu->mem.m_rombanks[rombank_get()].data[addr];
+	};
+	auto CMapperMBC3::read_sram(size_t addr) -> uint32_t {
+		if(!m_useram) { return 0; }
+		
+		if(m_sramIsRTC) {
+			switch(m_rtcReg) {
+				case 0: { return m_rtcSec; }
+				case 1: { return m_rtcMin; }
+				case 2: { return m_rtcHour; }
+				case 3: { return m_rtcDay & 0xFF; }
+				case 4: { return (m_rtcDay>>8) & 1; }
+				default: {
+					std::printf("error: unknown RTC register %d\n",m_rtcReg);
+					std::exit(-1);
+					break;
+				}
+			}
+		} else {
+			addr &= 0x1FFF;
+			addr += KBSIZE(8) * m_rambanknum;
+			return emu()->mem.m_sram[addr];
+			
+		}
+	}
+	
+	// TODO: make this good, check for banking, etc.
+	auto CMapperMBC3::write_sram(size_t addr, int data) -> void {
+		if(!m_useram) { return; }
+		
+		if(m_sramIsRTC) {
+			std::printf("warning: RTC write?\n");
+		} else {
+			addr &= 0x1FFF;
+			addr += KBSIZE(8) * m_rambanknum;
+			emu()->mem.m_sram[addr] = data;
+		}
+	}
+	auto CMapperMBC3::write_rom(size_t addr, int data) -> void {
+		addr &= 0x7FFF;
+		data &= 0xFF;
+
+		int reg_num = addr >> 13;
+		switch(reg_num) {
+			// RAM enable -------------------------------@/
+			case 0: {
+				if(data == 0xA) {
+					//std::puts("mbc: RAM enabled");
+					m_ramEnabled = true;
+				} else {
+					m_ramEnabled = false;
+				}
+				break;
+			}
+			// ROM bank number --------------------------@/
+			case 1: {
+				m_rombanknum = (data == 0) ? 1 : (data & 0x7F);
+				break;
+			}
+			// RAM bank/RTC select ----------------------@/
+			case 2: {
+				if(data >= 0 && data <= 3) {
+					m_sramIsRTC = false;
+					m_rambanknum = data;
+				} else if(data >= 0x8 && data <= 0xC) {
+					m_sramIsRTC = true;
+					m_rtcReg = data - 0x8;
+				}
+				break;
+			}
+			// RTC latch --------------------------------@/
+			case 3: {
+				if(data == 0) {
+					m_rtcLatchReady = true;
+				} else if(data == 1 && m_rtcLatchReady) {
+					m_rtcLatchReady = false;
+					m_rtcDay = 0;
+					m_rtcSec = 0;
+					m_rtcMin = 0;
+					m_rtcHour = 0;
+				}
+				break;
+			}
+			default: {
+				std::printf("unsupported MBC3 reg %d\n",reg_num);
+				std::exit(-1);
+				break;
+			}
+		}
+	}
+
+	auto CMapperMBC3::sram_serialize() -> Blob {
+		Blob datablob;
+
+		if(m_usebattery) {
+			const int bank_count = emu()->mem.m_rambankCount;
+			for(int i=0; i<KBSIZE(8) * bank_count; i++) {
+				datablob.write_u8(emu()->mem.m_sram[i]);
+			}
+		}
+
+		return datablob;
+	}
+
 	// MBC5 ---------------------------------------------@/
 	CMapperMBC5::CMapperMBC5(bool use_ram, bool use_battery, bool use_rumble) {
 		m_rambanknum = 0;
@@ -819,22 +966,19 @@ namespace fern {
 		addr &= 0x3FFF;
 		return m_emu->mem.m_rombanks[rombank_get()].data[addr];
 	};
-
 	auto CMapperMBC5::read_sram(size_t addr) -> uint32_t {
 		if(!m_useram) { return 0; }
-		//if(!m_usebattery) { return 0; }
 		
 		addr &= 0x1FFF;
+		addr += KBSIZE(8) * m_rambanknum;
 		return emu()->mem.m_sram[addr];
-		//error_unimpl("true SRAM read");
 	}
 	
-	// TODO: make this good, check for banking, etc.
 	auto CMapperMBC5::write_sram(size_t addr, int data) -> void {
 		if(!m_useram) { return; }
-		//if(!m_usebattery) { return; }
+		
 		addr &= 0x1FFF;
-
+		addr += KBSIZE(8) * m_rambanknum;
 		emu()->mem.m_sram[addr] = data;
 		//error_unimpl("true SRAM write");
 	}
@@ -860,7 +1004,7 @@ namespace fern {
 				m_rombanknum = data;
 				break;
 			}
-			// ROM bank number --------------------------@/
+			// ROM bank number (9th bit) ----------------@/
 			case 3: {
 				m_rombanknum_hi = data & 1;
 				break;
@@ -868,10 +1012,10 @@ namespace fern {
 			// RAM bank number --------------------------@/
 			case 4:
 			case 5: {
-			//	std::printf("mbc: RAM bank switch (%d)\n",data & 0x0F);
 				m_rambanknum = data & 0x0F;
 				break;
 			}
+			// unknown ----------------------------------@/
 			default: {
 				std::printf("unsupported MBC5 reg %d\n",reg_num);
 				std::exit(-1);
@@ -892,6 +1036,5 @@ namespace fern {
 
 		return datablob;
 	}
-
 };
 

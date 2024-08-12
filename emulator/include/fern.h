@@ -146,6 +146,7 @@ namespace fern {
 			CScreen m_screen;
 			CScreen m_screenVRAM;
 			int m_timeLastFrame;
+			int m_savetimer;
 			bool m_vsyncEnabled;
 		public:
 			CRenderer();
@@ -212,7 +213,45 @@ namespace fern {
 			~CMapperMBC1() {}
 
 			auto rombank_get() const -> int {
-				return m_banknum | (m_banknum_hi<<5);
+				if(m_rambankmode) {
+					return m_banknum;
+				} else {
+			   		return m_banknum | (m_banknum_hi<<5);
+				}
+			}
+			auto rom_bank() const -> int {
+				return rombank_get();
+			}
+	};
+	class CMapperMBC3 : public CMapper {
+		private:
+			int m_rambanknum;
+			int m_rombanknum;
+			
+			bool m_sramIsRTC;
+			bool m_ramEnabled;
+			bool m_useram;
+			bool m_usebattery;
+			bool m_rambankmode;
+			bool m_usetimer;
+
+			int m_rtcReg;
+			int m_rtcDay;
+			int m_rtcSec,m_rtcMin,m_rtcHour;
+			int m_rtcLatchReady;
+		public:
+			auto name() const -> std::string { return "MBC3"; };
+			auto read_rom(size_t addr) -> uint32_t;
+			auto read_sram(size_t addr) -> uint32_t;
+			auto write_sram(size_t addr, int data) -> void;
+			auto write_rom(size_t addr, int data) -> void;
+			auto sram_serialize() -> Blob;
+			
+			CMapperMBC3(bool use_ram, bool use_battery, bool use_timer);
+			~CMapperMBC3() {}
+
+			auto rombank_get() const -> int {
+				return m_rombanknum;
 			}
 			auto rom_bank() const -> int {
 				return rombank_get();
@@ -351,6 +390,7 @@ namespace fern {
 
 			auto mapper_setupNone() -> void;
 			auto mapper_setupMBC1(bool use_ram, bool use_battery) -> void;
+			auto mapper_setupMBC3(bool use_ram, bool use_battery, bool use_timer) -> void;
 			auto mapper_setupMBC5(bool use_ram, bool use_battery, bool use_rumble) -> void;
 
 			auto interrupt_match(int mask) -> bool;
@@ -564,6 +604,7 @@ namespace fern {
 		private:
 			bool m_quitflag;
 			bool m_cgbEnabled;
+			bool m_verboseEnable;
 			bool m_debugEnable;
 			bool m_debugSkipping;
 			int m_debugSkipAddr;
@@ -582,6 +623,7 @@ namespace fern {
 			auto process_message() -> void;
 			auto button_held(int btn) -> bool;
 
+			auto verbose_enabled() const -> bool { return m_verboseEnable; }
 			auto cgb_enabled() const -> bool { return m_cgbEnabled; }
 			auto debug_on() const -> bool { return m_debugEnable; }
 			auto debug_set(bool enable) -> void { m_debugEnable = enable; }

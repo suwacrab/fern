@@ -15,6 +15,7 @@ namespace fern {
 		m_debugEnable = flags->debug;
 		m_debugSkipping = false;
 		m_debugSkipAddr = 0;
+		m_verboseEnable = flags->verbose;
 
 		cpu.assign_emu(this);
 		mem.assign_emu(this);
@@ -173,9 +174,6 @@ namespace fern {
 	}
 	auto CEmulator::load_romfile(const std::string& filename) -> void {
 		cpu.reset();
-		//mem.reset();
-		//std::puts("unimplemented");
-		//std::exit(-1);
 		
 		auto file = std::fopen(filename.c_str(),"rb");
 		if(!file) {
@@ -205,6 +203,8 @@ namespace fern {
 			// MBC1
 			case 0x01: { mem.mapper_setupMBC1(false,false); break; }
 			case 0x03: { mem.mapper_setupMBC1(true,true); sram_used = true; break; }
+			// MBC3
+			case 0x13: { mem.mapper_setupMBC3(true,true,true); sram_used = true; break; }
 			// MBC5
 			case 0x1B: { mem.mapper_setupMBC5(true,true,false); sram_used = true; break; }
 			// unknown

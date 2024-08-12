@@ -1813,15 +1813,15 @@ namespace fern {
 							mem.m_io.m_LY = 0;
 						}
 						did_vblStart = (mem.m_io.m_LY == fern::SCREEN_Y);
-						//did_vblStart = (mem.m_io.m_LY == 0);
+					//	did_vblStart = (mem.m_io.m_LY == 0);
 						do_flipscreen = did_vblStart;
 
-						do_drawline = true;
 						m_lycCooldown = true;
 						if(m_dotclockMode == 0 || mem.m_io.m_LY < fern::SCREEN_Y) {
 							// continue in mode 2 if vblank period not reached
 							m_dotclockMode = 2;
 							m_dotclockLimit = 80;
+							do_drawline = true;
 						} else {
 							m_dotclockMode = 1;
 							m_dotclockLimit = 456;
@@ -1844,40 +1844,6 @@ namespace fern {
 					mem.m_io.stat_setMode(m_dotclockMode);
 				}
 
-				/*
-				if(m_dotclock >= 456) {
-					mem.m_io.m_LY += 1;
-					if(mem.m_io.m_LY > 153) {
-						mem.m_io.m_LY = 0;
-					}
-					did_vblStart = (mem.m_io.m_LY == 144);
-					//did_vblStart = (mem.m_io.m_LY == 0);
-					do_flipscreen = did_vblStart;
-
-					do_drawline = true;
-					m_dotclock -= 456;
-					m_lycCooldown = true;
-				} else {
-					if(m_dotclock < 80) {
-						mem.m_io.stat_setMode(2);
-					} else if(m_dotclock >= 80 && m_dotclock < (80+172)) {
-						mem.m_io.stat_setMode(3);
-					} else {
-						mem.m_io.stat_setMode(0);
-					}
-				}
-
-				// additional mode checking
-				if(mem.m_io.m_LY >= 144) {
-					mem.m_io.stat_setMode(1);
-				}
-
-				if(!mem.m_io.ppu_enabled()) {
-					mem.m_io.m_LY = 0;
-					m_dotclock = 0;
-					mem.m_io.stat_setMode(0);
-				}*/
-
 				mem.stat_lycSync();
 
 				// set flags based on mode changes ------@/
@@ -1885,16 +1851,16 @@ namespace fern {
 					const int cur_mode = mem.m_io.stat_getMode();
 					if(cur_mode != old_mode) {
 						bool do_setflag = false;
-						if((cur_mode == 0) && (mem.m_io.m_STAT&0x08)) {
+						if((cur_mode == 0) && (mem.m_io.m_STAT & RFlagSTAT::mode0int)) {
 							do_setflag = true;
 						}
-						if((cur_mode == 1) && (mem.m_io.m_STAT&0x10)) {
+						if((cur_mode == 1) && (mem.m_io.m_STAT & RFlagSTAT::mode1int)) {
 							do_setflag = true;
 						}
-						if((cur_mode == 2) && (mem.m_io.m_STAT&0x20)) {
+						if((cur_mode == 2) && (mem.m_io.m_STAT & RFlagSTAT::mode2int)) {
 							do_setflag = true;
 						}
-						mem.m_io.m_IF |= do_setflag ? 0x2 : 0;
+						mem.m_io.m_IF |= do_setflag ? RFlagIF::stat : 0;
 					}
 				}
 

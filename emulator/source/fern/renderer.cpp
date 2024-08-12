@@ -16,6 +16,7 @@ namespace fern {
 	 m_screen(fern::SCREEN_X,fern::SCREEN_Y),
      m_screenVRAM(fern::SCREENVRAM_X,fern::SCREENVRAM_Y) {
 		m_timeLastFrame = 0;
+		m_savetimer = 0;
 		m_window = nullptr;
 		m_windowVRAM = nullptr;
 		m_vsyncEnabled = false;
@@ -51,7 +52,7 @@ namespace fern {
 		// it's essentially two 8x24 screens, side by side
 		std::array<int,2> winpos_main;
 		SDL_GetWindowPosition(m_window,&winpos_main[0],&winpos_main[1]);
-		m_windowVRAM = SDL_CreateWindow("VRAM",
+		m_windowVRAM = SDL_CreateWindow("VRAM View",
 			winpos_main[0] + fern::SCREEN_X + 32,
 			winpos_main[1],
 			fern::SCREENVRAM_X,
@@ -68,8 +69,11 @@ namespace fern {
 			fern::CColor(12,12,12)
 		};
 		auto& mem = emu()->mem;
+		m_screenVRAM.clear(fern::CColor(255,0,255));
+
+		int num_banks = emu()->cgb_enabled() ? 2 : 1;
 		
-		for(int bank=0; bank<2; bank++)
+		for(int bank=0; bank<num_banks; bank++)
 		for(int i=0; i<0x180; i++) {
 			// get tile address
 			int addr = (KBSIZE(8)*bank) + i * 0x10;
@@ -119,6 +123,13 @@ namespace fern {
 
 		SDL_UpdateWindowSurface(m_window);
 		SDL_UpdateWindowSurface(m_windowVRAM);
+
+		// every 10 seconds, save
+		m_savetimer++;
+		if(m_savetimer >= (60*10)) {
+			m_savetimer = 0;
+			emu()->savedata_sync();
+		}
 	}
 	auto CRenderer::draw_line(int draw_y) -> void {
 		if(emu()->cgb_enabled()) {
@@ -458,9 +469,9 @@ namespace fern {
 			
 			if(bgscroll_y <= draw_y && bgscroll_x < fern::SCREEN_X) {
 				const int fetch_y = (draw_y - bgscroll_y) & 0xFF;
-				size_t addr_chrbase = 0x1800;
+				size_t addr_chrbase = 0x0800;
 				size_t addr_mapbase = 0x1800;
-				if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x1800;
+				if(lcdc & RFlagLCDC::chr8000) addr_chrbase -= 0x0800;
 				if(lcdc & RFlagLCDC::win9C00) addr_mapbase += 0x0400;
 				const size_t addr_mapline = addr_mapbase + ((fetch_y/8) * 0x20);
 
@@ -469,9 +480,15 @@ namespace fern {
 					if(draw_x+bgscroll_x-14 < 0) break;
 					int dot = 0;
 					// fetch tile
-					int tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (draw_x/8)));
-					if(!(lcdc & RFlagLCDC::chr8000)) tile -= 0x80;
-					int tileaddr = addr_chrbase + tile * 0x10;
+					int tile = 0;
+					if(lcdc & RFlagLCDC::chr8000) {
+						tile = mem.m_vram.at(addr_mapline + (draw_x/8));
+					} else {
+						tile = static_cast<int8_t>(mem.m_vram.at(addr_mapline + (draw_x/8)));
+						tile = (tile + 0x80) & 0xFF;
+					}
+					int tileaddr = addr_chrbase + tile * 0x10;				
+
 					// get pixel
 					tileaddr += (fetch_y&7)*2;
 					int lineA = mem.m_vram.at(tileaddr);
