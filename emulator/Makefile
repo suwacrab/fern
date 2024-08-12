@@ -3,6 +3,7 @@ CXX	:= clang++
 
 LIBFLAGS := -static
 LIBS := -lmingw32 -lSDL2
+LIBS += -lcomdlg32
 LIBS += -Wl,--dynamicbase -Wl,--nxcompat -Wl,--high-entropy-va -lm -ldinput8 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lshell32 -lsetupapi -lversion -luuid
 # ^ should always be last
 

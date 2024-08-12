@@ -124,9 +124,9 @@ namespace fern {
 		SDL_UpdateWindowSurface(m_window);
 		SDL_UpdateWindowSurface(m_windowVRAM);
 
-		// every 10 seconds, save
+		// every 45 seconds, save
 		m_savetimer++;
-		if(m_savetimer >= (60*10)) {
+		if(m_savetimer >= (60*45)) {
 			m_savetimer = 0;
 			emu()->savedata_sync();
 		}

@@ -4,16 +4,38 @@
 
 #include <fern.h>
 
+#include <windows.h>
+#include <dirent.h>
+
 static void print_usage();
 static void assert_exit(bool cond, const std::string& str);
 
-int main(int argc,const char *argv[]) {
-	if(argc <= 1) {
-		std::puts("error: not enough arguments");
-		print_usage();
-		std::exit(-1);
-	}
+int io_promptFileOpen(char filename[],int filename_size,void* parent_window,const char *filter) {
+	OPENFILENAME ofn;      			// common dialog box structure
 
+	char old_dir[512] = {};
+	getcwd(old_dir,sizeof(old_dir));	// copy cur directory to old_dir
+	
+	// Initialize OPENFILENAME
+	ZeroMemory(&ofn, sizeof(ofn));
+	ofn.lStructSize = sizeof(ofn);
+	ofn.lpstrFile = filename;
+	ofn.nMaxFile = filename_size;
+	ofn.lpstrFilter = filter;
+	ofn.lpstrFileTitle = NULL;
+	ofn.nMaxFileTitle = 0;
+	ofn.lpstrInitialDir = old_dir;
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+	ofn.hwndOwner = static_cast<HWND>(parent_window);
+
+	ZeroMemory(filename,filename_size);
+	int success = (GetOpenFileName(&ofn) == true);
+	//chdir(old_dir);
+	
+	return success;
+}
+
+int main(int argc,const char *argv[]) {
 	// argument handling --------------------------------@/
 	int arg_index = 1;
 
@@ -54,8 +76,6 @@ int main(int argc,const char *argv[]) {
 			flag_vsync = true;
 		} 
 		else if(arg1 == "-v") {
-			//assert_exit(arg_valid(),"mapconv: error: no output file specified");
-			//filename_output = arg_read();
 			flag_verbose = true;
 		} 
 		else {
@@ -69,6 +89,16 @@ int main(int argc,const char *argv[]) {
 		}
 	}
 
+	if(filename_rom.empty()) {
+		const char* filter = "Monochrome GB ROM (*.gb)\0*.gb\0Color GB ROM (*.gbc)\0*.gbc\0All Files (*.*)\0*.*\0\0";
+		std::array<char,512> filename_buf;
+		if(io_promptFileOpen(filename_buf.data(),filename_buf.size(),NULL,filter)) {
+			filename_rom = std::string(filename_buf.data());
+		} else {
+			print_usage();
+			std::exit(0);
+		}
+	}
 	assert_exit(!filename_rom.empty(),"error: no rom specified");
 
 	fern::CEmuInitFlags flags;
