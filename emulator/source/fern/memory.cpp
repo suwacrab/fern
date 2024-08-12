@@ -40,6 +40,11 @@ namespace fern {
 		m_mapper = new CMapperMBC1(use_ram, use_battery);
 		m_mapper->assign_emu(m_emu);
 	}
+	auto CMem::mapper_setupMBC5(bool use_ram, bool use_battery, bool use_rumble) -> void {
+		std::printf("created mapper\n");
+		m_mapper = new CMapperMBC5(use_ram, use_battery, use_rumble);
+		m_mapper->assign_emu(m_emu);
+	}
 
 	auto CMem::interrupt_match(int mask) -> bool {
 		return (m_io.m_IF & mask) && (m_io.m_IE & mask);
@@ -654,5 +659,110 @@ namespace fern {
 		//std::printf("MBC1 write: [%04Xh](%02Xh)\n",addr,data);
 		//emu()->cpu.print_status();
 	}
+
+	auto CMapperMBC1::sram_serialize() -> Blob {
+		Blob datablob;
+
+		if(m_usebattery) {
+			for(int i=0; i<KBSIZE(8); i++) {
+				datablob.write_u8(emu()->mem.m_sram[i]);
+			}
+		}
+
+		return datablob;
+	}
+
+	// MBC5 ---------------------------------------------@/
+	CMapperMBC5::CMapperMBC5(bool use_ram, bool use_battery, bool use_rumble) {
+		m_rambanknum = 0;
+		m_rombanknum = 0;
+		m_rombanknum_hi = 0;
+
+		m_ramEnabled = false;
+		m_rambankmode = false;
+		m_useram = use_ram;
+		m_usebattery = use_battery;
+		m_userumble = use_rumble;
+	}
+	
+	auto CMapperMBC5::read_rom(size_t addr) -> uint32_t {
+		if((addr>>14) == 0) {
+			return m_emu->mem.m_rombanks[0].data[addr];
+		}
+		addr &= 0x3FFF;
+		return m_emu->mem.m_rombanks[rombank_get()].data[addr];
+	};
+
+	auto CMapperMBC5::read_sram(size_t addr) -> uint32_t {
+		if(!m_useram) { return 0; }
+		//if(!m_usebattery) { return 0; }
+		
+		addr &= 0x1FFF;
+		return emu()->mem.m_sram[addr];
+		//error_unimpl("true SRAM read");
+	}
+	
+	// TODO: make this good, check for banking, etc.
+	auto CMapperMBC5::write_sram(size_t addr, int data) -> void {
+		if(!m_useram) { return; }
+		//if(!m_usebattery) { return; }
+		addr &= 0x1FFF;
+
+		emu()->mem.m_sram[addr] = data;
+		//error_unimpl("true SRAM write");
+	}
+	auto CMapperMBC5::write_rom(size_t addr, int data) -> void {
+		addr &= 0x7FFF;
+		data &= 0xFF;
+
+		int reg_num = addr >> 13;
+		switch(reg_num) {
+			// RAM enable -------------------------------@/
+			case 0: {
+				if(data == 0xA) {
+					std::puts("mbc: RAM enabled");
+					m_ramEnabled = true;
+				} else {
+					m_ramEnabled = false;
+				}
+				break;
+			}
+			// ROM bank number --------------------------@/
+			case 1: {
+				m_rombanknum = data;
+				break;
+			}
+			// ROM bank number --------------------------@/
+			case 2: {
+				m_rombanknum_hi = data & 1;
+				break;
+			}
+			// RAM bank number --------------------------@/
+			case 3: {
+				std::printf("mbc: RAM bank switch (%d)\n",data & 0x0F);
+				m_rambanknum = data & 0x0F;
+				break;
+			}
+			default: {
+				std::printf("unsupported MBC5 reg %d\n",reg_num);
+				std::exit(-1);
+				break;
+			}
+		}
+	}
+
+	auto CMapperMBC5::sram_serialize() -> Blob {
+		Blob datablob;
+
+		if(m_usebattery) {
+			const int bank_count = emu()->mem.m_rambankCount;
+			for(int i=0; i<KBSIZE(8) * bank_count; i++) {
+				datablob.write_u8(emu()->mem.m_sram[i]);
+			}
+		}
+
+		return datablob;
+	}
+
 };
 

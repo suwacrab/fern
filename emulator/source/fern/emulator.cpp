@@ -34,6 +34,27 @@ namespace fern {
 		renderer.window_create(flags->vsync);
 	}
 
+	auto CEmulator::savedata_getFilename() -> std::string {
+		return m_romfilename + ".fsv";
+	}
+	auto CEmulator::savedata_sync() -> void {
+		auto savedat = mem.m_mapper->sram_serialize();
+		if(savedat.size() == 0) return;
+		
+		Blob blob_header;
+		Blob blob_file;
+
+		// write header ---------------------------------@/
+		blob_header.write_str("FSV");
+		blob_header.write_u32(savedat.size());
+
+		// write to file --------------------------------@/
+		blob_file.write_blob(blob_header);
+		blob_file.write_blob(savedat);
+
+		blob_file.write_file(savedata_getFilename(),true);
+	}
+
 	auto CEmulator::process_message() -> void {
 		SDL_Event eve;
 		while(SDL_PollEvent(&eve)) {
@@ -144,6 +165,8 @@ namespace fern {
 			}
 			process_message();
 		}
+
+		savedata_sync();
 	}
 	auto CEmulator::load_romfile(const std::string& filename) -> void {
 		cpu.reset();
@@ -177,8 +200,10 @@ namespace fern {
 		switch(hdr_carttype) {
 			case 0: { mem.mapper_setupNone(); break; }
 			// MBC1
-			case 1: { mem.mapper_setupMBC1(false,false); break; }
-			case 3: { mem.mapper_setupMBC1(true,true); sram_used = true; break; }
+			case 0x01: { mem.mapper_setupMBC1(false,false); break; }
+			case 0x03: { mem.mapper_setupMBC1(true,true); sram_used = true; break; }
+			// MBC5
+			case 0x1B: { mem.mapper_setupMBC5(true,true,false); sram_used = true; break; }
 			// unknown
 			default: {
 				std::printf("error: ROM has unknown mapper %02Xh\n",hdr_carttype);
@@ -238,6 +263,33 @@ namespace fern {
 			for(size_t i=0; i<banksize; i++) {
 				mem.m_rombanks[b].data.at(i) = rom_vec.at(i + (b*banksize));
 			}
+		}
+
+		m_romfilename = filename;
+
+		// load save data, if any
+		auto fsvfile = std::fopen(savedata_getFilename().c_str(),"rb");
+		if(fsvfile) {
+			const char fsv_magic[4] = { 'F','S','V',0 };
+			for(int i=0; i<4; i++) {
+				char chr = 0xFF;
+				std::fread(&chr,1,sizeof(char),fsvfile);
+				if(chr != fsv_magic[i]) {
+					std::printf("error: corrupt .fsv savefile\n");
+					std::exit(-1);
+				}
+			}
+
+			uint32_t savesize = 0;
+			std::fread(&savesize,1,sizeof(savesize),fsvfile);
+
+			for(int i=0; i<savesize; i++) {
+				uint8_t chr = 0;
+				std::fread(&chr,1,sizeof(char),fsvfile);
+				mem.m_sram[i] = chr;
+			}
+
+			std::fclose(fsvfile);
 		}
 	}
 }

@@ -9,6 +9,8 @@
 #include <stack>
 #include <string>
 
+#include <blob.h>
+
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 
@@ -147,6 +149,7 @@ namespace fern {
 			virtual auto read_sram(size_t addr) -> uint32_t = 0;
 			virtual auto write_sram(size_t addr, int data) -> void = 0;
 			virtual auto write_rom(size_t addr, int data) -> void = 0;
+			virtual auto sram_serialize() -> Blob = 0;
 			virtual ~CMapper() {}
 			
 			virtual auto rom_bank() const -> int = 0;
@@ -159,6 +162,7 @@ namespace fern {
 			auto read_sram(size_t addr) -> uint32_t;
 			auto write_sram(size_t addr, int data) -> void;
 			auto write_rom(size_t addr, int data) -> void;
+			auto sram_serialize() -> Blob { return Blob(); }
 			CMapperNone() {}
 			~CMapperNone() {}
 
@@ -178,12 +182,42 @@ namespace fern {
 			auto read_sram(size_t addr) -> uint32_t;
 			auto write_sram(size_t addr, int data) -> void;
 			auto write_rom(size_t addr, int data) -> void;
+			auto sram_serialize() -> Blob;
 			
 			CMapperMBC1(bool use_ram, bool use_battery);
 			~CMapperMBC1() {}
 
 			auto rombank_get() const -> int {
 				return m_banknum | (m_banknum_hi<<5);
+			}
+			auto rom_bank() const -> int {
+				return rombank_get();
+			}
+	};
+	class CMapperMBC5 : public CMapper {
+		private:
+			int m_rambanknum;
+			int m_rombanknum;
+			int m_rombanknum_hi;
+			
+			bool m_ramEnabled;
+			bool m_useram;
+			bool m_usebattery;
+			bool m_rambankmode;
+			bool m_userumble;
+		public:
+			auto name() const -> std::string { return "MBC5"; };
+			auto read_rom(size_t addr) -> uint32_t;
+			auto read_sram(size_t addr) -> uint32_t;
+			auto write_sram(size_t addr, int data) -> void;
+			auto write_rom(size_t addr, int data) -> void;
+			auto sram_serialize() -> Blob;
+			
+			CMapperMBC5(bool use_ram, bool use_battery, bool use_rumble);
+			~CMapperMBC5() {}
+
+			auto rombank_get() const -> int {
+				return m_rombanknum | (m_rombanknum_hi<<8);
 			}
 			auto rom_bank() const -> int {
 				return rombank_get();
@@ -271,6 +305,7 @@ namespace fern {
 
 			auto mapper_setupNone() -> void;
 			auto mapper_setupMBC1(bool use_ram, bool use_battery) -> void;
+			auto mapper_setupMBC5(bool use_ram, bool use_battery, bool use_rumble) -> void;
 
 			auto interrupt_match(int mask) -> bool;
 			auto interrupt_clear(int mask) -> void;
@@ -470,12 +505,16 @@ namespace fern {
 			bool m_debugSkipping;
 			int m_debugSkipAddr;
 			std::array<bool,EmuButton::num_keys> m_joypad_state;
+			std::string m_romfilename;
 		public:
 			CCPU cpu;
 			CMem mem;
 			CRenderer renderer;
 
 			CEmulator(const CEmuInitFlags* flags);
+
+			auto savedata_sync() -> void;
+			auto savedata_getFilename() -> std::string;
 
 			auto process_message() -> void;
 			auto button_held(int btn) -> bool;

@@ -36,7 +36,11 @@ end
 -- build flags --------------------------------------------------------------@/
 local function compile()
 	execa("rm -rf bin\\fern.exe")
-	execa("make all -j6")
+	if argsearch('singlejob') then
+		execa("make all -j1")
+	else
+		execa("make all -j6")
+	end
 end
 
 if argsearch('clean') then
