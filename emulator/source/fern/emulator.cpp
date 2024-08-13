@@ -12,10 +12,15 @@ namespace fern {
 		m_quitflag = false;
 		m_cgbEnabled = true;
 
+		m_nowaitEnable = false;
 		m_debugEnable = flags->debug;
 		m_debugSkipping = false;
 		m_debugSkipAddr = 0;
 		m_verboseEnable = flags->verbose;
+
+		m_savetimer = 0;
+
+		m_romfilename = {};
 
 		cpu.assign_emu(this);
 		mem.assign_emu(this);
@@ -32,7 +37,17 @@ namespace fern {
 	//	renderer.window_create(true);
 	}
 
-	auto CEmulator::savedata_getFilename() -> std::string {
+	auto CEmulator::nowait_set(bool nowait) -> void {
+		m_nowaitEnable = nowait;
+	}
+	auto CEmulator::nowait_toggle() -> void {
+		nowait_set(!m_nowaitEnable);
+	}
+
+	auto CEmulator::savedata_getFilename() -> std::optional<std::string> {
+		if(m_romfilename.empty()) {
+			return {};
+		}
 		return m_romfilename + ".fsv";
 	}
 	auto CEmulator::savedata_sync() -> void {
@@ -50,7 +65,10 @@ namespace fern {
 		blob_file.write_blob(blob_header);
 		blob_file.write_blob(savedat);
 
-		blob_file.write_file(savedata_getFilename(),true);
+		auto filename = savedata_getFilename();
+		if(filename) {
+			blob_file.write_file(filename.value(),true);
+		}
 	}
 
 	auto CEmulator::process_message() -> void {
@@ -73,6 +91,8 @@ namespace fern {
 						debug_set(true);
 					} else if(key == SDLK_r) {
 						debug_set(false);
+					} else if(key == SDLK_f) {
+						nowait_toggle();
 					}
 					break;
 				}
@@ -89,6 +109,12 @@ namespace fern {
 		m_joypad_state.at(EmuButton::a) = keystate[SDL_SCANCODE_S];
 		m_joypad_state.at(EmuButton::start) = keystate[SDL_SCANCODE_B];
 		m_joypad_state.at(EmuButton::select) = keystate[SDL_SCANCODE_V];
+
+		// deal with saving
+		if(SDL_GetTicks() - m_savetimer >= fern::CEmulator::SAVE_DURATION) {
+			m_savetimer = SDL_GetTicks();
+			savedata_sync();
+		}
 	}
 	auto CEmulator::button_held(int btn) -> bool {
 		if(btn < 0) return false;
@@ -275,28 +301,31 @@ namespace fern {
 		m_romfilename = filename;
 
 		// load save data, if any
-		auto fsvfile = std::fopen(savedata_getFilename().c_str(),"rb");
-		if(fsvfile) {
-			const char fsv_magic[4] = { 'F','S','V',0 };
-			for(int i=0; i<4; i++) {
-				char chr = 0xFF;
-				std::fread(&chr,1,sizeof(char),fsvfile);
-				if(chr != fsv_magic[i]) {
-					std::printf("error: corrupt .fsv savefile\n");
-					std::exit(-1);
+		auto save_name = savedata_getFilename();
+		if(save_name) {
+			auto fsvfile = std::fopen(save_name.value().c_str(),"rb");
+			if(fsvfile) {
+				const char fsv_magic[4] = { 'F','S','V',0 };
+				for(int i=0; i<4; i++) {
+					char chr = 0xFF;
+					std::fread(&chr,1,sizeof(char),fsvfile);
+					if(chr != fsv_magic[i]) {
+						std::printf("error: corrupt .fsv savefile\n");
+						std::exit(-1);
+					}
 				}
+
+				uint32_t savesize = 0;
+				std::fread(&savesize,1,sizeof(savesize),fsvfile);
+
+				for(int i=0; i<savesize; i++) {
+					uint8_t chr = 0;
+					std::fread(&chr,1,sizeof(char),fsvfile);
+					mem.m_sram[i] = chr;
+				}
+
+				std::fclose(fsvfile);
 			}
-
-			uint32_t savesize = 0;
-			std::fread(&savesize,1,sizeof(savesize),fsvfile);
-
-			for(int i=0; i<savesize; i++) {
-				uint8_t chr = 0;
-				std::fread(&chr,1,sizeof(char),fsvfile);
-				mem.m_sram[i] = chr;
-			}
-
-			std::fclose(fsvfile);
 		}
 
 		// setup CGB stuff

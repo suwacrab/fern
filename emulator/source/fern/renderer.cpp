@@ -14,11 +14,12 @@ namespace fern {
 	// renderer -----------------------------------------@/
 	CRenderer::CRenderer() :
 	 m_screen(fern::SCREEN_X,fern::SCREEN_Y),
-     m_screenVRAM(fern::SCREENVRAM_X,fern::SCREENVRAM_Y) {
+     m_screenVRAM(fern::SCREENVRAM_X,fern::SCREENVRAM_Y),
+	 m_screenPalet(fern::SCREENPAL_X,fern::SCREENPAL_Y) {
 		m_timeLastFrame = 0;
-		m_savetimer = 0;
 		m_window = nullptr;
 		m_windowVRAM = nullptr;
+		m_windowPalet = nullptr;
 		m_vsyncEnabled = false;
 	}
 	CRenderer::~CRenderer() {
@@ -48,15 +49,23 @@ namespace fern {
 			);
 		}
 
-		// create other window for debug
-		// it's essentially two 8x24 screens, side by side
+		// create other windows for debug
+		// VRAM window's essentially two 8x24 screens, side by side
 		std::array<int,2> winpos_main;
 		SDL_GetWindowPosition(m_window,&winpos_main[0],&winpos_main[1]);
+
 		m_windowVRAM = SDL_CreateWindow("VRAM View",
 			winpos_main[0] + fern::SCREEN_X + 32,
 			winpos_main[1],
 			fern::SCREENVRAM_X,
 			fern::SCREENVRAM_Y,
+			0
+		);
+		m_windowPalet = SDL_CreateWindow("CRAM View",
+			winpos_main[0] - fern::SCREENPAL_X - 32,
+			winpos_main[1],
+			fern::SCREENPAL_X,
+			fern::SCREENPAL_Y,
 			0
 		);
 	}
@@ -99,37 +108,72 @@ namespace fern {
 			}
 		}
 	}
+	auto CRenderer::render_palwindow() -> void {
+		auto& mem = emu()->mem;
+		m_screenPalet.clear(fern::CColor(255,0,255));
+
+		if(!emu()->cgb_enabled()) return;
+		auto palet_getTrue = [&](const auto& src_mem) {
+			std::array<fern::CColor,32> palet;
+			for(int i=0; i<32; i++) {
+				int data = src_mem[i*2 + 0] | (src_mem[i*2 + 1] << 8);
+				palet[i] = fern::CColor::from_rgb15(data);
+			}
+			return palet;
+		};
+		const auto palet_BG = palet_getTrue(mem.m_paletBG);
+		const auto palet_obj = palet_getTrue(mem.m_paletObj);
+
+		// each color's 4 dots wide
+		const int square_sizeX = 16;
+		const int square_sizeY = 8;
+		auto palet_render = [&](auto palet, int x_offset) {
+			for(int i=0; i<palet.size(); i++) {
+				const int draw_x = (i&3) * square_sizeX + x_offset;
+				const int draw_y = (i/4) * square_sizeY;
+
+				auto color = palet.at(i);
+				for(int y=0; y<square_sizeY; y++) {
+					for(int x=0; x<square_sizeX; x++) {
+						m_screenPalet.dot_access(draw_x+x,draw_y+y) = color;
+					}
+				}
+			}
+		};
+		palet_render(palet_BG,0);
+		palet_render(palet_obj,m_screenPalet.width()/2);
+	}
 
 	auto CRenderer::present() -> void {
 		render_vramwindow();
+		render_palwindow();
 		if(auto surface = SDL_GetWindowSurface(m_window)) {
 			m_screen.render_toSurface(surface);
 		}
 		if(auto surface = SDL_GetWindowSurface(m_windowVRAM)) {
 			m_screenVRAM.render_toSurface(surface);
 		}
-
-		// wait til next frame
-		if(!vsync_enabled()) {
-			// busy wait for next frame...
-			while(SDL_GetTicks() - m_timeLastFrame < (1000 / 60)) {
-				SDL_Delay(1);
-			}
-			m_timeLastFrame = SDL_GetTicks();
-		} else {
-			SDL_RenderClear(m_renderer);
-			SDL_RenderPresent(m_renderer);
+		if(auto surface = SDL_GetWindowSurface(m_windowPalet)) {
+			m_screenPalet.render_toSurface(surface);
 		}
+
+		if(!emu()->nowait_isEnabled()) {
+			// wait til next frame
+			if(!vsync_enabled()) {
+				// busy wait for next frame...
+				while(SDL_GetTicks() - m_timeLastFrame < (1000 / 60)) {
+					SDL_Delay(1);
+				}
+			} else {
+				SDL_RenderClear(m_renderer);
+				SDL_RenderPresent(m_renderer);
+			}
+		}
+		m_timeLastFrame = SDL_GetTicks();
 
 		SDL_UpdateWindowSurface(m_window);
 		SDL_UpdateWindowSurface(m_windowVRAM);
-
-		// every 45 seconds, save
-		m_savetimer++;
-		if(m_savetimer >= (60*45)) {
-			m_savetimer = 0;
-			emu()->savedata_sync();
-		}
+		SDL_UpdateWindowSurface(m_windowPalet);
 	}
 	auto CRenderer::draw_line(int draw_y) -> void {
 		if(emu()->cgb_enabled()) {

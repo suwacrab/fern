@@ -8,6 +8,7 @@
 #include <vector>
 #include <stack>
 #include <string>
+#include <optional>
 
 #include <blob.h>
 
@@ -24,6 +25,8 @@ namespace fern {
 	constexpr int SCREEN_Y = 144;
 	constexpr int SCREENVRAM_X = 8 * 32;
 	constexpr int SCREENVRAM_Y = 8 * 24;
+	constexpr int SCREENPAL_X = 128;
+	constexpr int SCREENPAL_Y = 64;
 
 	constexpr int KBSIZE(int n) { return 1024 * n; }
 	constexpr int MBSIZE(int n) { return KBSIZE(1024) * n; }
@@ -142,11 +145,12 @@ namespace fern {
 		private:
 			SDL_Window* m_window;
 			SDL_Window* m_windowVRAM;
+			SDL_Window* m_windowPalet;
 			SDL_Renderer* m_renderer;
 			CScreen m_screen;
 			CScreen m_screenVRAM;
+			CScreen m_screenPalet;
 			int m_timeLastFrame;
-			int m_savetimer;
 			bool m_vsyncEnabled;
 		public:
 			CRenderer();
@@ -155,6 +159,7 @@ namespace fern {
 			auto window_create(bool vsync) -> void;
 
 			auto render_vramwindow() -> void;
+			auto render_palwindow() -> void;
 			auto present() -> void;
 			auto draw_line(int draw_y) -> void;
 			auto draw_lineDMG(int draw_y) -> void;
@@ -601,15 +606,19 @@ namespace fern {
 	};
 	
 	class CEmulator {
+		public:
+			static const int SAVE_DURATION = 1000*5;
 		private:
 			bool m_quitflag;
 			bool m_cgbEnabled;
+			bool m_nowaitEnable;
 			bool m_verboseEnable;
 			bool m_debugEnable;
 			bool m_debugSkipping;
 			int m_debugSkipAddr;
-			std::array<bool,EmuButton::num_keys> m_joypad_state;
+			int m_savetimer;
 			std::string m_romfilename;
+			std::array<bool,EmuButton::num_keys> m_joypad_state;
 		public:
 			CCPU cpu;
 			CMem mem;
@@ -618,10 +627,14 @@ namespace fern {
 			CEmulator(const CEmuInitFlags* flags);
 
 			auto savedata_sync() -> void;
-			auto savedata_getFilename() -> std::string;
+			auto savedata_getFilename() -> std::optional<std::string>;
 
 			auto process_message() -> void;
 			auto button_held(int btn) -> bool;
+
+			auto nowait_set(bool nowait) -> void;
+			auto nowait_toggle() -> void;
+			auto nowait_isEnabled() const -> bool { return m_nowaitEnable; }
 
 			auto verbose_enabled() const -> bool { return m_verboseEnable; }
 			auto cgb_enabled() const -> bool { return m_cgbEnabled; }
