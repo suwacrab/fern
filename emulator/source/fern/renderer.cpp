@@ -23,9 +23,23 @@ namespace fern {
 		m_vsyncEnabled = false;
 	}
 	CRenderer::~CRenderer() {
-		
 	}
 
+	auto CRenderer::window_close() -> void {
+		// TODO: should renderer be deleted, too?
+		// apparently it should in older SDL2 versions...
+		// t. https://github.com/libsdl-org/SDL/issues/9540
+		auto del_window = [&](SDL_Window* winhandle) {
+			if(winhandle) SDL_DestroyWindow(winhandle);
+		};
+		del_window(m_window);
+		del_window(m_windowPalet);
+		del_window(m_windowVRAM);
+
+		m_window = nullptr;
+		m_windowPalet = nullptr;
+		m_windowVRAM = nullptr;
+	}
 	auto CRenderer::window_create(bool vsync) -> void {
 		m_vsyncEnabled = vsync;
 		m_window = SDL_CreateWindow("fern",

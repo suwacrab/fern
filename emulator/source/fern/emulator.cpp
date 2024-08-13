@@ -32,9 +32,12 @@ namespace fern {
 			std::exit(-1);
 		}
 
-		std::atexit(SDL_Quit);
 		renderer.window_create(flags->vsync);
-	//	renderer.window_create(true);
+	}
+
+	CEmulator::~CEmulator() {
+		renderer.window_close();
+		SDL_Quit();
 	}
 
 	auto CEmulator::nowait_set(bool nowait) -> void {

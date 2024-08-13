@@ -157,6 +157,7 @@ namespace fern {
 			~CRenderer();
 
 			auto window_create(bool vsync) -> void;
+			auto window_close() -> void;
 
 			auto render_vramwindow() -> void;
 			auto render_palwindow() -> void;
@@ -625,6 +626,7 @@ namespace fern {
 			CRenderer renderer;
 
 			CEmulator(const CEmuInitFlags* flags);
+			~CEmulator();
 
 			auto savedata_sync() -> void;
 			auto savedata_getFilename() -> std::optional<std::string>;
