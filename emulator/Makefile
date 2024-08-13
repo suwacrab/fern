@@ -33,7 +33,8 @@ all: $(OUTPUT)
 # building
 $(OUTPUT): $(OBJS)
 	@echo -e "\tlinking..."
-	$(CXX) $(LIBFLAGS) $^ $(LIBS) -o $@
+	windres workdata/fern.rc -O coff -o build/fern.res
+	$(CXX) $(LIBFLAGS) $^ build/fern.res $(LIBS) -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CFLAGS) -c $< -o $@
