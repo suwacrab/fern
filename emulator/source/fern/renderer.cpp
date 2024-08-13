@@ -4,6 +4,18 @@
 
 namespace fern {
 	// color --------------------------------------------@/
+	const std::array<fern::CColor,4> CRenderer::MONOPALET_GRAY = {
+		fern::CColor(255,255,255),
+		fern::CColor(192,192,192),
+		fern::CColor(112,112,112),
+		fern::CColor(12,12,12)
+	};
+	const std::array<fern::CColor,4> CRenderer::MONOPALET_ORANGE = {
+		fern::CColor(0xff,0xf6,0xd3),
+		fern::CColor(0xf9,0xa8,0x75),
+		fern::CColor(0xeb,0x6b,0x6f),
+		fern::CColor(0x7c,0x3f,0x58)
+	};
 	auto CColor::from_rgb15(int clrdat) -> CColor {
 		int r = (clrdat) & 31;
 		int g = (clrdat >> 5) & 31;
@@ -85,23 +97,39 @@ namespace fern {
 	}
 
 	auto CRenderer::render_vramwindow() -> void {
-		const std::array<fern::CColor,4> palet_gray = {
-			fern::CColor(255,255,255),
-			fern::CColor(192,192,192),
-			fern::CColor(112,112,112),
-			fern::CColor(12,12,12)
-		};
 		auto& mem = emu()->mem;
 		m_screenVRAM.clear(fern::CColor(255,0,255));
 
 		int num_banks = emu()->cgb_enabled() ? 2 : 1;
-		
+		auto& dmg_palet = fern::CRenderer::MONOPALET_GRAY;
+
+		auto palet_getTrue = [&](const auto& src_mem) {
+			std::array<fern::CColor,32> palet;
+			for(int i=0; i<32; i++) {
+				int data = src_mem[i*2 + 0] | (src_mem[i*2 + 1] << 8);
+				palet[i] = fern::CColor::from_rgb15(data);
+			}
+			return palet;
+		};
+		const auto palet_BG = palet_getTrue(mem.m_paletBG);
+		const auto palet_obj = palet_getTrue(mem.m_paletObj);
+
 		for(int bank=0; bank<num_banks; bank++)
 		for(int i=0; i<0x180; i++) {
 			// get tile address
 			int addr = (KBSIZE(8)*bank) + i * 0x10;
 			int screenX = (i & 0xF) * 8 + (bank * 128);
 			int screenY = (i / 16) * 8;
+
+			const fern::CColor* palet_line = dmg_palet.data();
+			if(m_vramMarker.at(addr/0x10) >= 0) {
+				int pal_code = m_vramMarker.at(addr/0x10);
+				if(pal_code < 8) {
+					palet_line = &palet_BG[(pal_code & 7) * 4];
+				} else {
+					palet_line = &palet_obj[(pal_code & 7) * 4];
+				}
+			}
 
 			// read lines
 			for(int y=0; y<8; y++) {
@@ -114,7 +142,7 @@ namespace fern {
 					int dotA = (lineA >> 7) & 0b1;
 					int dotB = (lineB >> 7) & 0b10;
 					int dot = dotA | dotB;
-					auto color = palet_gray[dot];
+					auto color = palet_line[dot];
 					m_screenVRAM.dot_access(screenX+x,screenY+y) = color;
 					lineA <<= 1;
 					lineB <<= 1;
@@ -126,36 +154,81 @@ namespace fern {
 		auto& mem = emu()->mem;
 		m_screenPalet.clear(fern::CColor(255,0,255));
 
-		if(!emu()->cgb_enabled()) return;
-		auto palet_getTrue = [&](const auto& src_mem) {
-			std::array<fern::CColor,32> palet;
-			for(int i=0; i<32; i++) {
-				int data = src_mem[i*2 + 0] | (src_mem[i*2 + 1] << 8);
-				palet[i] = fern::CColor::from_rgb15(data);
+		if(emu()->cgb_enabled()) {
+			auto palet_getTrue = [&](const auto& src_mem) {
+				std::array<fern::CColor,32> palet;
+				for(int i=0; i<32; i++) {
+					int data = src_mem[i*2 + 0] | (src_mem[i*2 + 1] << 8);
+					palet[i] = fern::CColor::from_rgb15(data);
+				}
+				return palet;
+			};
+			const auto palet_BG = palet_getTrue(mem.m_paletBG);
+			const auto palet_obj = palet_getTrue(mem.m_paletObj);
+
+			// each color's 4 dots wide
+			const int square_sizeX = 16;
+			const int square_sizeY = 8;
+			auto palet_render = [&](auto palet, int x_offset) {
+				for(int i=0; i<palet.size(); i++) {
+					const int draw_x = (i&3) * square_sizeX + x_offset;
+					const int draw_y = (i/4) * square_sizeY;
+
+					auto color = palet.at(i);
+					for(int y=0; y<square_sizeY; y++) {
+						for(int x=0; x<square_sizeX; x++) {
+							m_screenPalet.dot_access(draw_x+x,draw_y+y) = color;
+						}
+					}
+				}
+			};
+			palet_render(palet_BG,0);
+			palet_render(palet_obj,m_screenPalet.width()/2);
+		} else {
+			const auto& dmg_palet = fern::CRenderer::MONOPALET_ORANGE;
+			std::array<std::array<int,4>,2> obp_table;
+			std::array<int,4> bgp_table;
+
+			// create bgp lookup table ------------------@/
+			int bgp_shifter = mem.m_io.m_BGP;
+			std::array<int,2> obp_shifter = { mem.m_io.m_OBP[0], mem.m_io.m_OBP[1] };
+			for(int i=0; i<4; i++) {
+				obp_table[0][i] = obp_shifter.at(0) & 3;
+				obp_table[1][i] = obp_shifter.at(1) & 3;
+				bgp_table.at(i) = bgp_shifter & 3;
+				obp_shifter.at(0) >>= 2;
+				obp_shifter.at(1) >>= 2;
+				bgp_shifter >>= 2;
 			}
-			return palet;
-		};
-		const auto palet_BG = palet_getTrue(mem.m_paletBG);
-		const auto palet_obj = palet_getTrue(mem.m_paletObj);
-
-		// each color's 4 dots wide
-		const int square_sizeX = 16;
-		const int square_sizeY = 8;
-		auto palet_render = [&](auto palet, int x_offset) {
-			for(int i=0; i<palet.size(); i++) {
-				const int draw_x = (i&3) * square_sizeX + x_offset;
-				const int draw_y = (i/4) * square_sizeY;
-
-				auto color = palet.at(i);
+			
+			// draw bg palette --------------------------@/
+			for(int i=0; i<4; i++) {
+				static const int square_sizeX = 16;
+				static const int square_sizeY = 64;
+				auto color = dmg_palet.at(bgp_table[i]);
 				for(int y=0; y<square_sizeY; y++) {
 					for(int x=0; x<square_sizeX; x++) {
-						m_screenPalet.dot_access(draw_x+x,draw_y+y) = color;
+						m_screenPalet.dot_access((i*square_sizeX)+x,y) = color;
 					}
 				}
 			}
-		};
-		palet_render(palet_BG,0);
-		palet_render(palet_obj,m_screenPalet.width()/2);
+
+			// draw obj palette -------------------------@/
+			for(int p=0; p<2; p++) {
+				for(int i=0; i<4; i++) {
+					static const int square_sizeX = 16;
+					static const int square_sizeY = 32;
+					const int draw_x = (i*square_sizeX) + 64;
+					const int draw_y = (p*square_sizeY);
+					auto color = dmg_palet.at(obp_table[p][i]);
+					for(int y=0; y<square_sizeY; y++) {
+						for(int x=0; x<square_sizeX; x++) {
+							m_screenPalet.dot_access(draw_x+x,draw_y+y) = color;
+						}
+					}
+				}
+			}
+		}
 	}
 
 	auto CRenderer::present() -> void {
@@ -184,6 +257,7 @@ namespace fern {
 			}
 		}
 		m_timeLastFrame = SDL_GetTicks();
+		m_vramMarker.fill(-1);
 
 		SDL_UpdateWindowSurface(m_window);
 		SDL_UpdateWindowSurface(m_windowVRAM);
@@ -199,13 +273,6 @@ namespace fern {
 
 	auto CRenderer::draw_lineCGB(int draw_y) -> void {
 		if(draw_y < 0 || draw_y >= 144) return;
-
-		const std::array<fern::CColor,4> palet_gray = {
-			fern::CColor(255,255,255),
-			fern::CColor(192,192,192),
-			fern::CColor(112,112,112),
-			fern::CColor(12,12,12)
-		};
 
 		auto& mem = emu()->mem;
 		const int lcdc = mem.m_io.m_LCDC;
@@ -264,6 +331,7 @@ namespace fern {
 						tile = (tile + 0x80) & 0xFF;
 					}
 					int tileaddr = (KBSIZE(8) * attrib_banknum) + addr_chrbase + tile * 0x10;
+					m_vramMarker.at(tileaddr / 0x10) = attrib_paletnum;
 					
 					// get pixel
 					int tileY = (fetch_y&7);
@@ -278,7 +346,7 @@ namespace fern {
 					dot = dotA | (dotB<<1);
 					color = palet_BG[attrib_paletnum*4 + dot];
 				} else {
-					color = palet_gray[0];
+					color = fern::CRenderer::MONOPALET_ORANGE[0];
 				}
 				m_screen.dot_set(draw_x,draw_y,color);
 				bg_linebuffer[draw_x] = dot;
@@ -317,6 +385,7 @@ namespace fern {
 
 				// get tile address
 				int tileaddr = (attrib_bank * KBSIZE(8)) + (oamdata[2] * 0x10);
+				m_vramMarker.at(tileaddr / 0x10) = attrib_palet + 8;
 				tileaddr += line_y * 2;
 				if(spr_size2x) tileaddr &= 0xFFFE;
 				int lineA = mem.m_vram[tileaddr];
@@ -371,6 +440,7 @@ namespace fern {
 						tile = (tile + 0x80) & 0xFF;
 					}
 					int tileaddr = (KBSIZE(8) * attrib_banknum) + addr_chrbase + tile * 0x10;
+					m_vramMarker.at(tileaddr / 0x10) = attrib_paletnum;
 					
 					// get pixel
 					int tileY = (fetch_y&7);
@@ -394,14 +464,9 @@ namespace fern {
 	}
 	auto CRenderer::draw_lineDMG(int draw_y) -> void {
 		if(draw_y < 0 || draw_y >= 144) return;
-		const std::array<fern::CColor,4> palet_gray = {
-			fern::CColor(0xff,0xf6,0xd3),
-			fern::CColor(0xf9,0xa8,0x75),
-			fern::CColor(0xeb,0x6b,0x6f),
-			fern::CColor(0x7c,0x3f,0x58)
-		};
 
 		auto& mem = emu()->mem;
+		const auto& dmg_palet = fern::CRenderer::MONOPALET_ORANGE;
 		const int lcdc = mem.m_io.m_LCDC;
 		std::array<char,fern::SCREEN_X> bg_linebuffer;
 		std::array<char,fern::SCREEN_X> obj_linebuffer;
@@ -421,7 +486,7 @@ namespace fern {
 		}
 
 		if(!(lcdc & RFlagLCDC::lcdon)) {
-			const auto color = palet_gray[0];
+			const auto color = dmg_palet[0];
 			for(int i=0; i<fern::SCREEN_X; i++) {
 				m_screen.dot_access(i,draw_y) = color;
 			}
@@ -462,7 +527,7 @@ namespace fern {
 					dot = dotA | (dotB<<1);
 				} 
 			//	m_screen.dot_set(draw_x,draw_y,palet_gray[dot]);
-				m_screen.dot_set(draw_x,draw_y,palet_gray[bgp_table[dot]]);
+				m_screen.dot_set(draw_x,draw_y,dmg_palet[bgp_table[dot]]);
 				bg_linebuffer[draw_x] = dot;
 			}
 		}
@@ -516,7 +581,7 @@ namespace fern {
 				if(oamdat_prio && (bg_linebuffer[oamdat_x+x] > 0)) continue;
 				obj_linebuffer[oamdat_x+x] = dot;
 				m_screen.dot_access(oamdat_x+x,draw_y) = 
-					palet_gray.at(cur_paltable.at(dot));
+					dmg_palet.at(cur_paltable.at(dot));
 			}
 		}
 
@@ -554,7 +619,7 @@ namespace fern {
 					int dotA = (lineA >> (7-(draw_x&7))) & 1;
 					int dotB = (lineB >> (7-(draw_x&7))) & 1;
 					dot = dotA | (dotB<<1);
-					m_screen.dot_set(draw_x+bgscroll_x-14,draw_y,palet_gray[bgp_table[dot]]);
+					m_screen.dot_set(draw_x+bgscroll_x-14,draw_y,dmg_palet[bgp_table[dot]]);
 				}
 			}
 		}

@@ -33,6 +33,7 @@ Additionally, using `fern` with no options brings up a ROM open prompt.
 - Select: `V`
 - Start: `B`
 - Enable debugger: `G`
+- Double-speed: `F`
 
 you can exit the debugger by entering `r` in the command window.
 

@@ -142,6 +142,9 @@ namespace fern {
 			constexpr auto dimensions() const -> int { return width() * height(); }
 	};
 	class CRenderer : public CEmulatorComponent {
+		public:
+			static const std::array<CColor,4> MONOPALET_GRAY;
+			static const std::array<CColor,4> MONOPALET_ORANGE;
 		private:
 			SDL_Window* m_window;
 			SDL_Window* m_windowVRAM;
@@ -150,6 +153,8 @@ namespace fern {
 			CScreen m_screen;
 			CScreen m_screenVRAM;
 			CScreen m_screenPalet;
+
+			std::array<int,0x400> m_vramMarker;
 			int m_timeLastFrame;
 			bool m_vsyncEnabled;
 		public:
