@@ -492,20 +492,11 @@ namespace fern {
 		const int lcdc = mem.m_io.m_LCDC;
 		std::array<char,fern::SCREEN_X> bg_linebuffer;
 		std::array<char,fern::SCREEN_X> obj_linebuffer;
-		std::array<std::array<int,4>,2> obp_table;
-		std::array<int,4> bgp_table;
-
-		// create bgp lookup table
-		int bgp_shifter = mem.m_io.m_BGP;
-		std::array<int,2> obp_shifter = { mem.m_io.m_OBP[0], mem.m_io.m_OBP[1] };
-		for(int i=0; i<4; i++) {
-			obp_table[0][i] = obp_shifter.at(0) & 3;
-			obp_table[1][i] = obp_shifter.at(1) & 3;
-			bgp_table.at(i) = bgp_shifter & 3;
-			obp_shifter.at(0) >>= 2;
-			obp_shifter.at(1) >>= 2;
-			bgp_shifter >>= 2;
-		}
+		std::array<std::array<int,4>,2> obp_table = {
+			CMem::palet_getLUT(mem.m_io.m_OBP[0]),
+			CMem::palet_getLUT(mem.m_io.m_OBP[1])
+		};
+		std::array<int,4> bgp_table = CMem::palet_getLUT(mem.m_io.m_BGP);
 
 		if(!(lcdc & RFlagLCDC::lcdon)) {
 			const auto color = dmg_palet[0];
