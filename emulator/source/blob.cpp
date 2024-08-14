@@ -14,6 +14,7 @@ Blob::Blob(const Blob& other) {
 }
 Blob::Blob(const std::string& source_str) {
 	m_data.clear();
+	m_data.reserve(32);
 	write_str(source_str);
 }
 
@@ -32,7 +33,7 @@ bool Blob::load_file(const std::string& filename, bool allow_fail) {
 
 	// get file size ------------------------------------@/
 	std::fseek(file,0,SEEK_END);
-	size_t filesize = ftell(file);
+	const size_t filesize = ftell(file);
 	std::rewind(file);
 
 	// read entire file ---------------------------------@/
@@ -47,15 +48,15 @@ bool Blob::load_file(const std::string& filename, bool allow_fail) {
 }
 
 // writing ------------------------------------------------------------------@/
-void Blob::write_u8(const uint8_t num) {
-	m_data.push_back(num);
+void Blob::write_u8(const uint32_t num) {
+	m_data.push_back(num & 0xFF);
 }
-void Blob::write_u16(const uint16_t num) {
-	write_u8(num & 0xFF);
+void Blob::write_u16(const uint32_t num) {
+	write_u8(num);
 	write_u8(num>>8);
 }
 void Blob::write_u32(const uint32_t num) {
-	write_u16(num & 0xFFFF);
+	write_u16(num);
 	write_u16(num>>16);
 }
 void Blob::write_str(const std::string& source_str) {
@@ -95,6 +96,7 @@ auto Blob::write_file(const std::string& filename, bool allow_fail) -> bool {
 	return true;
 }
 
+// misc ---------------------------------------------------------------------@/
 auto Blob::align(size_t alignment, uint8_t filler) -> void {
 	auto newsize = ((size() + (alignment-1)) / alignment) * alignment;
 	auto to_write = newsize - size();

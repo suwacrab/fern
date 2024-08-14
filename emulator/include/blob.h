@@ -17,8 +17,8 @@ class Blob {
 		auto write_file(const std::string& filename, bool allow_fail=false) -> bool;
 		
 		auto write_raw(const void* source, size_t size) -> void;
-		auto write_u8(const uint8_t num) -> void;
-		auto write_u16(const uint16_t num) -> void;
+		auto write_u8(const uint32_t num) -> void;
+		auto write_u16(const uint32_t num) -> void;
 		auto write_u32(const uint32_t num) -> void;
 		auto write_blob(const Blob& other) -> void;
 		auto write_str(const std::string& source_str) -> void;
@@ -36,3 +36,4 @@ class Blob {
 };
 
 #endif
+
