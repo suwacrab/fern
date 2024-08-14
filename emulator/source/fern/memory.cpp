@@ -31,6 +31,16 @@ namespace fern {
 		m_rombankCount = 0;
 	}
 
+	auto CMem::palet_getLUT(int palflags) -> std::array<int,4> {
+		int shifter = palflags;
+		std::array<int,4> table;
+		for(int i=0; i<4; i++) {
+			table[i] = shifter & 3;
+			shifter >>= 2;	
+		};
+		return table;
+	}
+
 	auto CMem::mapper_setupNone() -> void {
 		m_mapper = new CMapperNone();
 		m_mapper->assign_emu(m_emu);

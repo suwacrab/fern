@@ -404,6 +404,8 @@ namespace fern {
 			auto mapper_setupMBC3(bool use_ram, bool use_battery, bool use_timer) -> void;
 			auto mapper_setupMBC5(bool use_ram, bool use_battery, bool use_rumble) -> void;
 
+			static auto palet_getLUT(int palflags) -> std::array<int,4>;
+
 			auto interrupt_match(int mask) -> bool;
 			auto interrupt_clear(int mask) -> void;
 			auto rombank_current() -> int;

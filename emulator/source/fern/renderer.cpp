@@ -114,6 +114,13 @@ namespace fern {
 		const auto palet_BG = palet_getTrue(mem.m_paletBG);
 		const auto palet_obj = palet_getTrue(mem.m_paletObj);
 
+		std::array<int,4> pallut_dummy = { 0,1,2,3 };
+		std::array<int,4> pallut_bg = CMem::palet_getLUT(mem.m_io.m_BGP);
+		std::array<std::array<int,4>,2> pallut_obj = {
+			CMem::palet_getLUT(mem.m_io.m_OBP[0]),
+			CMem::palet_getLUT(mem.m_io.m_OBP[1])
+		};
+
 		for(int bank=0; bank<num_banks; bank++)
 		for(int i=0; i<0x180; i++) {
 			// get tile address
@@ -122,12 +129,22 @@ namespace fern {
 			int screenY = (i / 16) * 8;
 
 			const fern::CColor* palet_line = dmg_palet.data();
+			auto pallut_current = &pallut_dummy;
 			if(m_vramMarker.at(addr/0x10) >= 0) {
 				int pal_code = m_vramMarker.at(addr/0x10);
-				if(pal_code < 8) {
-					palet_line = &palet_BG[(pal_code & 7) * 4];
+				if(emu()->cgb_enabled()) {
+					if(pal_code < 8) {
+						palet_line = &palet_BG[(pal_code & 7) * 4];
+					} else {
+						palet_line = &palet_obj[(pal_code & 7) * 4];
+					}
 				} else {
-					palet_line = &palet_obj[(pal_code & 7) * 4];
+					palet_line = fern::CRenderer::MONOPALET_ORANGE.data();
+					switch(pal_code) {
+						case 0: pallut_current = &pallut_bg; break;
+						case 1: pallut_current = &pallut_obj[0]; break;
+						case 2: pallut_current = &pallut_obj[1]; break;
+					}
 				}
 			}
 
@@ -142,6 +159,9 @@ namespace fern {
 					int dotA = (lineA >> 7) & 0b1;
 					int dotB = (lineB >> 7) & 0b10;
 					int dot = dotA | dotB;
+					if(!emu()->cgb_enabled()) {
+						dot = pallut_current->at(dot);
+					}
 					auto color = palet_line[dot];
 					m_screenVRAM.dot_access(screenX+x,screenY+y) = color;
 					lineA <<= 1;
@@ -277,7 +297,6 @@ namespace fern {
 		auto& mem = emu()->mem;
 		const int lcdc = mem.m_io.m_LCDC;
 		std::array<char,fern::SCREEN_X> bg_linebuffer;
-		//std::array<char,fern::SCREEN_X> obj_linebuffer;
 
 		auto palet_getTrue = [&](const auto& src_mem) {
 			std::array<fern::CColor,32> palet;
@@ -356,6 +375,7 @@ namespace fern {
 		// draw sprites ---------------------------------@/
 		const bool spr_size2x = (mem.m_io.m_LCDC & 0x04) != 0;
 		const int spr_height = spr_size2x ? 16 : 8;
+		const int spr_tilemask = spr_size2x ? 0xFE : 0xFF;
 		
 		if(lcdc & RFlagLCDC::objon) {
 			for(int spr_idx=0; spr_idx<40; spr_idx++) {
@@ -366,6 +386,7 @@ namespace fern {
 					mem.m_oam[spr_idx*4 + 3]
 				};
 
+				const int oamdat_tile = oamdata[2] & spr_tilemask;
 				const int oamdat_y = oamdata[0] - 16;
 				const int oamdat_x = oamdata[1] - 8;
 				const bool oamdat_prio = (oamdata[3] >> 7) & 1;
@@ -384,10 +405,12 @@ namespace fern {
 				if(flipY) line_y = (spr_height-1) - line_y;
 
 				// get tile address
-				int tileaddr = (attrib_bank * KBSIZE(8)) + (oamdata[2] * 0x10);
+				int tileaddr = (attrib_bank * KBSIZE(8)) + (oamdat_tile * 0x10);
 				m_vramMarker.at(tileaddr / 0x10) = attrib_palet + 8;
+				if(spr_size2x) {
+					m_vramMarker.at(1 + tileaddr / 0x10) = attrib_palet + 8;
+				}
 				tileaddr += line_y * 2;
-				if(spr_size2x) tileaddr &= 0xFFFE;
 				int lineA = mem.m_vram[tileaddr];
 				int lineB = mem.m_vram[tileaddr+1];
 
@@ -455,7 +478,6 @@ namespace fern {
 					dot = dotA | (dotB<<1);
 
 					m_screen.dot_set(draw_x+bgscroll_x-14,draw_y,
-					//	palet_gray[bgp_table[dot]]
 						palet_BG[attrib_paletnum*4 + dot]
 					);
 				}
@@ -518,6 +540,8 @@ namespace fern {
 						tile = (tile + 0x80) & 0xFF;
 					}
 					int tileaddr = addr_chrbase + tile * 0x10;
+					m_vramMarker.at(tileaddr / 0x10) = 0;
+
 					// get pixel
 					tileaddr += (fetch_y&7)*2;
 					int lineA = mem.m_vram[tileaddr];
@@ -535,7 +559,8 @@ namespace fern {
 		// draw sprites ---------------------------------@/
 		const bool spr_size2x = (mem.m_io.m_LCDC & 0x04) != 0;
 		const int spr_height = spr_size2x ? 16 : 8;
-		
+		const int spr_tilemask = spr_size2x ? 0xFE : 0xFF;
+
 		for(int spr_idx=0; spr_idx<40; spr_idx++) {
 			const std::array<int,4> oamdata = { 
 				mem.m_oam[spr_idx*4 + 0],
@@ -550,6 +575,7 @@ namespace fern {
 			const bool oamdat_prio = (oamdata[3] >> 7) & 1;
 			const bool flipX = (oamdata[3]>>5) & 1;
 			const bool flipY = (oamdata[3]>>6) & 1;
+			const int oamdat_tile = oamdata[2] & spr_tilemask;
 
 			auto& cur_paltable = obp_table.at(oamdat_palet);
 			if(oamdat_y <= -16 || oamdat_y >= 144) continue;
@@ -562,9 +588,12 @@ namespace fern {
 			if(flipY) line_y = (spr_height-1) - line_y;
 
 			// get tile address
-			int tileaddr = 0x0000 + (oamdata[2] * 0x10);
+			int tileaddr = 0x0000 + (oamdat_tile * 0x10);
 			tileaddr += line_y * 2;
-			if(spr_size2x) tileaddr &= 0xFFFE;
+			m_vramMarker.at(oamdat_tile) = 1 + oamdat_palet;
+			if(spr_size2x) {
+				m_vramMarker.at(oamdat_tile + 1) = 1 + oamdat_palet;
+			}
 			int lineA = mem.m_vram[tileaddr];
 			int lineB = mem.m_vram[tileaddr+1];
 
@@ -611,6 +640,7 @@ namespace fern {
 						tile = (tile + 0x80) & 0xFF;
 					}
 					int tileaddr = addr_chrbase + tile * 0x10;				
+					m_vramMarker.at(tileaddr / 0x10) = 0;
 
 					// get pixel
 					tileaddr += (fetch_y&7)*2;
